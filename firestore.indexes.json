@@ -1,0 +1,48 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "clasesRegulares",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cicloId", "order": "ASCENDING" },
+        { "fieldPath": "labId", "order": "ASCENDING" },
+        { "fieldPath": "activo", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reservas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "labId", "order": "ASCENDING" },
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "fechaInicio", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reservas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "docenteId", "order": "ASCENDING" },
+        { "fieldPath": "solicitadaEn", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reservas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "solicitadaEn", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "notificaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "destinatarioId", "order": "ASCENDING" },
+        { "fieldPath": "leida", "order": "ASCENDING" },
+        { "fieldPath": "creadaEn", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

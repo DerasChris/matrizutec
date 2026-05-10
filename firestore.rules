@@ -1,0 +1,107 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function emailDominio() {
+      return request.auth.token.email.matches('.*@gmail[.]com$');
+    }
+
+    function getRol(uid) {
+      return get(/databases/$(database)/documents/usuarios/$(uid)).data.rol;
+    }
+
+    function rolUsuario() {
+      return getRol(request.auth.uid);
+    }
+
+    function esEncargado() {
+      return isAuth() && rolUsuario() == 'encargado';
+    }
+
+    function esJefa() {
+      return isAuth() && rolUsuario() == 'jefa';
+    }
+
+    function esDocente() {
+      return isAuth() && rolUsuario() == 'docente';
+    }
+
+    function esAdmin() {
+      return esEncargado() || esJefa();
+    }
+
+    function usuarioActivo() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.activo == true;
+    }
+
+    match /usuarios/{userId} {
+      allow read: if isAuth() && (request.auth.uid == userId || esAdmin());
+      allow create: if isAuth()
+                    && request.auth.uid == userId
+                    && emailDominio()
+                    && request.resource.data.rol == 'docente'
+                    && request.resource.data.activo == true;
+      allow update: if isAuth() && (
+        (request.auth.uid == userId
+          && request.resource.data.rol == resource.data.rol
+          && request.resource.data.activo == resource.data.activo)
+        || esJefa()
+      );
+      allow delete: if esJefa();
+    }
+
+    match /laboratorios/{labId} {
+      allow read: if isAuth();
+      allow write: if esAdmin() && usuarioActivo();
+    }
+
+    match /ciclos/{cicloId} {
+      allow read: if isAuth();
+      allow write: if esAdmin() && usuarioActivo();
+    }
+
+    match /clasesRegulares/{claseId} {
+      allow read: if isAuth();
+      allow create, update, delete: if esAdmin() && usuarioActivo();
+    }
+
+    match /reservas/{reservaId} {
+      allow read: if isAuth() && (
+        esAdmin() ||
+        resource.data.docenteId == request.auth.uid
+      );
+
+      allow create: if isAuth()
+                    && usuarioActivo()
+                    && request.resource.data.docenteId == request.auth.uid
+                    && request.resource.data.estado == 'pendiente';
+
+      allow update: if isAuth() && (
+        (esJefa() && usuarioActivo())
+        ||
+        (resource.data.docenteId == request.auth.uid
+         && resource.data.estado == 'pendiente'
+         && request.resource.data.estado == 'cancelada')
+      );
+
+      allow delete: if esJefa();
+    }
+
+    match /notificaciones/{notifId} {
+      allow read: if isAuth() && resource.data.destinatarioId == request.auth.uid;
+      allow create: if esAdmin();
+      allow update: if isAuth() && resource.data.destinatarioId == request.auth.uid;
+      allow delete: if isAuth() && resource.data.destinatarioId == request.auth.uid;
+    }
+
+    match /configuracion/{docId} {
+      allow read: if isAuth();
+      allow write: if esJefa();
+    }
+  }
+}
