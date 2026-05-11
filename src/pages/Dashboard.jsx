@@ -342,7 +342,11 @@ function verificarUbicacion() {
                     horaActual={horaAhora}
                     labNombre={labSeleccionado.nombre}
                   />
-                  <AgendaDelDia clases={clases} reservas={reservas} />
+                  <AgendaDelDia
+                    clases={clases}
+                    reservas={reservas}
+                    labNombre={labSeleccionado.nombre}
+                  />
                 </>
               )}
             </>
