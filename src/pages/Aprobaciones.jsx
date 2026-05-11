@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   Loader2, Check, X as XIcon, Trash2, Edit2, RefreshCw, Inbox,
-  Clock, Calendar, MapPin, User, MessageSquare,
+  Clock, Calendar, MapPin, User, MessageSquare, History,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -16,6 +16,7 @@ import { crearNotificacion } from '../services/notificacionesService';
 import { TIPOS_NOTIFICACION, ESTADOS_RESERVA, ESTADOS_RESERVA_LABEL, ESTADOS_RESERVA_COLOR } from '../lib/constants';
 import { formatearFechaCorta } from '../utils/dateHelpers';
 import TarjetaReserva from '../components/reservas/TarjetaReserva';
+import EditarReservaModal from '../components/reservas/EditarReservaModal';
 
 export default function Aprobaciones() {
   const { perfil } = useAuth();
@@ -25,6 +26,7 @@ export default function Aprobaciones() {
   const [cargando, setCargando] = useState(true);
   const [accion, setAccion] = useState(false);
   const [nota, setNota] = useState('');
+  const [editarAbierto, setEditarAbierto] = useState(false);
 
   useEffect(() => {
     cargar();
@@ -228,6 +230,7 @@ export default function Aprobaciones() {
               onAprobar={handleAprobar}
               onRechazar={handleRechazar}
               onEliminar={handleEliminar}
+              onEditar={() => setEditarAbierto(true)}
             />
           ) : (
             <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
@@ -236,13 +239,22 @@ export default function Aprobaciones() {
           )}
         </div>
       </div>
+
+      <EditarReservaModal
+        reserva={seleccionada}
+        abierto={editarAbierto}
+        onCerrar={() => setEditarAbierto(false)}
+        onGuardado={cargar}
+        adminPerfil={perfil}
+      />
     </div>
   );
 }
 
-function DetalleReserva({ reserva, nota, setNota, accion, onAprobar, onRechazar, onEliminar }) {
+function DetalleReserva({ reserva, nota, setNota, accion, onAprobar, onRechazar, onEliminar, onEditar }) {
   const colores = ESTADOS_RESERVA_COLOR[reserva.estado];
   const esPendiente = reserva.estado === ESTADOS_RESERVA.PENDIENTE;
+  const esAprobada = reserva.estado === ESTADOS_RESERVA.APROBADA;
   const fechas = reserva.ocurrencias || [reserva.fechaInicio];
 
   return (
@@ -335,6 +347,18 @@ function DetalleReserva({ reserva, nota, setNota, accion, onAprobar, onRechazar,
         </div>
       )}
 
+      {reserva.modificadaPorNombre && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-2.5 flex items-center gap-2 text-xs">
+          <History className="w-4 h-4 text-blue-600 flex-shrink-0" />
+          <span className="text-blue-900">
+            Modificada por <strong>{reserva.modificadaPorNombre}</strong>
+            {reserva.modificadaEn?.toDate && (
+              <> el {reserva.modificadaEn.toDate().toLocaleDateString('es-SV', { day: '2-digit', month: 'short', year: 'numeric' })}</>
+            )}
+          </span>
+        </div>
+      )}
+
       {esPendiente && (
         <>
           <div className="mb-3">
@@ -369,6 +393,19 @@ function DetalleReserva({ reserva, nota, setNota, accion, onAprobar, onRechazar,
             </button>
           </div>
         </>
+      )}
+
+      {esAprobada && (
+        <div className="flex gap-2">
+          <button
+            onClick={onEditar}
+            disabled={accion}
+            className="flex-1 px-4 py-3 bg-utec-primary text-white rounded-lg hover:bg-utec-dark disabled:opacity-50 flex items-center justify-center gap-2 font-medium"
+          >
+            <Edit2 size={18} />
+            Editar reserva
+          </button>
+        </div>
       )}
 
       <div className="flex justify-end gap-2 mt-3">

@@ -37,6 +37,17 @@ export async function actualizarReserva(id, datos) {
   return { id, ...datos };
 }
 
+export async function modificarReservaAprobada(id, datos, adminUid, adminNombre) {
+  const ref = doc(db, COLECCIONES.RESERVAS, id);
+  await updateDoc(ref, {
+    ...datos,
+    modificadaPor: adminUid,
+    modificadaPorNombre: adminNombre,
+    modificadaEn: serverTimestamp(),
+    actualizadaEn: serverTimestamp(),
+  });
+}
+
 export async function aprobarReserva(id, jefaUid, jefaNombre, nota = '') {
   const ref = doc(db, COLECCIONES.RESERVAS, id);
   await updateDoc(ref, {
@@ -161,4 +172,49 @@ export async function obtenerClasesRegularesParaValidacion(labId) {
   const q = query(ref, where('labId', '==', labId), where('activo', '==', true));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export function calcularDiferencias(original, modificada) {
+  const cambios = [];
+  const campos = [
+    { key: 'labNombre', label: 'Laboratorio' },
+    { key: 'asignatura', label: 'Asignatura' },
+    { key: 'motivo', label: 'Motivo' },
+    { key: 'horaInicio', label: 'Hora inicio' },
+    { key: 'horaFin', label: 'Hora fin' },
+    { key: 'docenteNombre', label: 'Docente' },
+    { key: 'docenteEmail', label: 'Email docente' },
+  ];
+
+  for (const { key, label } of campos) {
+    const a = original?.[key];
+    const b = modificada?.[key];
+    if ((a || '') !== (b || '')) {
+      cambios.push({ campo: label, antes: a || '(vacío)', despues: b || '(vacío)' });
+    }
+  }
+
+  const modA = JSON.stringify((original?.modulos || []).slice().sort());
+  const modB = JSON.stringify((modificada?.modulos || []).slice().sort());
+  if (modA !== modB) {
+    cambios.push({
+      campo: 'Módulos',
+      antes: (original?.modulos || []).join(', ').toUpperCase() || '(lab completo)',
+      despues: (modificada?.modulos || []).join(', ').toUpperCase() || '(lab completo)',
+    });
+  }
+
+  const ocA = JSON.stringify((original?.ocurrencias || []).slice().sort());
+  const ocB = JSON.stringify((modificada?.ocurrencias || []).slice().sort());
+  if (ocA !== ocB) {
+    const oA = original?.ocurrencias || [];
+    const oB = modificada?.ocurrencias || [];
+    cambios.push({
+      campo: 'Fechas',
+      antes: `${oA.length} fecha(s)${oA.length > 0 ? ` (${oA[0]} a ${oA[oA.length - 1]})` : ''}`,
+      despues: `${oB.length} fecha(s)${oB.length > 0 ? ` (${oB[0]} a ${oB[oB.length - 1]})` : ''}`,
+    });
+  }
+
+  return cambios;
 }
