@@ -40,6 +40,14 @@ export async function actualizarRol(uid, nuevoRol) {
   });
 }
 
+export async function actualizarLabsAsignados(uid, labIds) {
+  const ref = doc(db, COLECCIONES.USUARIOS, uid);
+  await updateDoc(ref, {
+    labsAsignados: labIds,
+    actualizadoEn: serverTimestamp(),
+  });
+}
+
 export async function actualizarUsuario(uid, datos) {
   const ref = doc(db, COLECCIONES.USUARIOS, uid);
   await updateDoc(ref, {

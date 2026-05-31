@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ROLES_LABEL } from '../../lib/constants';
 import {
   LayoutDashboard, CalendarDays, ClipboardList, Users, LogOut, Settings, Inbox,
-  Bell, Check, CheckCheck,
+  Bell, Check, CheckCheck, BookOpen,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { suscribirseANotificaciones, marcarComoLeida, marcarTodasLeidas } from '../../services/notificacionesService';
@@ -40,6 +40,7 @@ export default function Header() {
     {to:'/servicios', label:'Servicios', icon: LayoutDashboard, roles: 'todos'},
     { to: '/', label: 'Estado actual', icon: LayoutDashboard, roles: 'todos' },
     { to: '/matriz', label: 'Matriz mensual', icon: CalendarDays, roles: ['encargado', 'jefa'] },
+    { to: '/admin/ciclos', label: 'Ciclos', icon: BookOpen, roles: ['encargado', 'jefa'] },
     { to: '/reservar', label: 'Reservar', icon: ClipboardList, roles: ['docente', 'encargado', 'jefa'] },
     { to: '/mis-reservas', label: 'Mis reservas', icon: Inbox, roles: ['docente'] },
     { to: '/aprobaciones', label: 'Aprobaciones', icon: Inbox, roles: ['jefa'] },

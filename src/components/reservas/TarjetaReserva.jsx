@@ -1,24 +1,32 @@
-import { Clock, Calendar, MapPin, User, MessageSquare } from 'lucide-react';
-import { ESTADOS_RESERVA_LABEL, ESTADOS_RESERVA_COLOR, TIPOS_RESERVA_LABEL } from '../../lib/constants';
+import { Clock, Calendar, MapPin, User, MessageSquare, Bus } from 'lucide-react';
+import { ESTADOS_RESERVA_LABEL, ESTADOS_RESERVA_COLOR, TIPOS_RESERVA } from '../../lib/constants';
 import { formatearFechaCorta } from '../../utils/dateHelpers';
 
 export default function TarjetaReserva({ reserva, onClick, seleccionada = false }) {
   const colores = ESTADOS_RESERVA_COLOR[reserva.estado] || ESTADOS_RESERVA_COLOR.pendiente;
   const fechaPrincipal = reserva.fechaInicio || (reserva.ocurrencias?.[0]) || '';
   const cantidadFechas = reserva.ocurrencias?.length || 1;
+  const esTour = reserva.tipo === TIPOS_RESERVA.TOUR;
 
   return (
     <div
       onClick={onClick}
       className={`border rounded-lg p-3 cursor-pointer transition-all ${
-        seleccionada ? `border-utec-primary ring-2 ring-utec-primary/30 ${colores.bg}` : `${colores.bg} ${colores.border} hover:border-utec-primary`
+        seleccionada
+          ? `border-utec-primary ring-2 ring-utec-primary/30 ${colores.bg}`
+          : `${colores.bg} ${colores.border} hover:border-utec-primary`
       }`}
     >
       <div className="flex items-start justify-between mb-2 gap-2">
-        <p className={`text-sm font-semibold ${colores.text} truncate flex-1`}>
-          {reserva.asignatura || reserva.motivo || 'Reserva'}
-        </p>
-        <span className={`text-[9px] px-2 py-0.5 ${colores.badge} text-white rounded font-bold uppercase whitespace-nowrap`}>
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          {esTour && <Bus size={13} className="text-purple-600 flex-shrink-0" />}
+          <p className={`text-sm font-semibold ${colores.text} truncate`}>
+            {esTour
+              ? `Tour – ${reserva.colegio || 'Sin colegio'}`
+              : (reserva.asignatura || reserva.motivo || 'Reserva')}
+          </p>
+        </div>
+        <span className={`text-[9px] px-2 py-0.5 ${colores.badge} text-white rounded font-bold uppercase whitespace-nowrap flex-shrink-0`}>
           {ESTADOS_RESERVA_LABEL[reserva.estado] || reserva.estado}
         </span>
       </div>
@@ -32,9 +40,7 @@ export default function TarjetaReserva({ reserva, onClick, seleccionada = false 
           <MapPin size={11} className="text-gray-500" />
           <span>{reserva.labNombre || reserva.labId}</span>
           {reserva.modulos?.length > 0 && (
-            <span className="text-[10px] text-gray-500">
-              · {reserva.modulos.join(', ').toUpperCase()}
-            </span>
+            <span className="text-[10px] text-gray-500">· {reserva.modulos.join(', ').toUpperCase()}</span>
           )}
         </div>
         <div className="flex items-center gap-1.5">

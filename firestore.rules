@@ -27,16 +27,19 @@ service cloud.firestore {
       return isAuth() && rolUsuario() == 'jefa';
     }
 
-    function esDocente() {
-      return isAuth() && rolUsuario() == 'docente';
-    }
-
     function esAdmin() {
       return esEncargado() || esJefa();
     }
 
     function usuarioActivo() {
       return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.activo == true;
+    }
+
+    // Valida que una creación es una solicitud pública legítima (sin auth)
+    function esSolicitudPublica() {
+      return request.resource.data.esExterno == true
+          && request.resource.data.docenteId == 'publico'
+          && request.resource.data.estado == 'pendiente';
     }
 
     match /usuarios/{userId} {
@@ -56,30 +59,33 @@ service cloud.firestore {
     }
 
     match /laboratorios/{labId} {
-      allow read: if isAuth();
+      // Lectura pública: el formulario externo necesita cargar los labs disponibles
+      allow read: if true;
       allow write: if esAdmin() && usuarioActivo();
     }
 
     match /ciclos/{cicloId} {
-      allow read: if isAuth();
+      // Lectura pública: necesario para obtener el ciclo activo y verificar disponibilidad
+      allow read: if true;
       allow write: if esAdmin() && usuarioActivo();
     }
 
     match /clasesRegulares/{claseId} {
-      allow read: if isAuth();
+      // Lectura pública: necesario para mostrar disponibilidad en el formulario externo
+      allow read: if true;
       allow create, update, delete: if esAdmin() && usuarioActivo();
     }
 
     match /reservas/{reservaId} {
-      allow read: if isAuth() && (
-        esAdmin() ||
-        resource.data.docenteId == request.auth.uid
-      );
+      allow read: if isAuth() && (esAdmin() || resource.data.docenteId == request.auth.uid)
+                  || !isAuth(); // Lectura pública para verificar disponibilidad
 
-      allow create: if isAuth()
-                    && usuarioActivo()
-                    && request.resource.data.docenteId == request.auth.uid
-                    && request.resource.data.estado == 'pendiente';
+      allow create: if
+        // Usuario interno autenticado y activo
+        (isAuth() && usuarioActivo() && request.resource.data.docenteId == request.auth.uid && request.resource.data.estado == 'pendiente')
+        ||
+        // Solicitud pública sin autenticación
+        (!isAuth() && esSolicitudPublica());
 
       allow update: if isAuth() && (
         (esJefa() && usuarioActivo())
@@ -97,6 +103,12 @@ service cloud.firestore {
       allow create: if esAdmin();
       allow update: if isAuth() && resource.data.destinatarioId == request.auth.uid;
       allow delete: if isAuth() && resource.data.destinatarioId == request.auth.uid;
+    }
+
+    // Cola de emails: escritura pública para poder encolar notificaciones de solicitudes externas
+    match /mail/{mailId} {
+      allow create: if true;
+      allow read, update, delete: if esAdmin();
     }
 
     match /configuracion/{docId} {

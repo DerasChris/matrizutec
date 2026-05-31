@@ -36,6 +36,7 @@ export const TIPOS_RESERVA = {
   RANGO: 'rango',
   RECURRENTE: 'recurrente',
   MULTIPLES: 'multiples',
+  TOUR: 'tour',
 };
 
 export const TIPOS_RESERVA_LABEL = {
@@ -43,6 +44,7 @@ export const TIPOS_RESERVA_LABEL = {
   rango: 'Rango de días consecutivos',
   recurrente: 'Recurrente (varios días por semana)',
   multiples: 'Fechas específicas',
+  tour: 'Tour UTEC',
 };
 
 export const TIPOS_NOTIFICACION = {
@@ -62,6 +64,24 @@ export const TIPOS_CLASE = {
 export const TIPOS_CLASE_LABEL = {
   regular: 'Clase regular del ciclo',
   puntual: 'Práctica puntual (un solo día)',
+};
+
+export const TIPOS_CICLO = [
+  { numero: 1, codigo: '01', nombre: 'Primer Ciclo', corto: 'C01', esInterciclo: false,
+    fechaInicioSugerida: (anio) => `${anio}-01-15`,
+    fechaFinSugerida: (anio) => `${anio}-06-30` },
+  { numero: 2, codigo: '02', nombre: 'Segundo Ciclo', corto: 'C02', esInterciclo: false,
+    fechaInicioSugerida: (anio) => `${anio}-08-01`,
+    fechaFinSugerida: (anio) => `${anio}-11-30` },
+  { numero: 3, codigo: '03', nombre: 'Interciclo', corto: 'C03', esInterciclo: true,
+    fechaInicioSugerida: (anio) => `${anio}-07-01`,
+    fechaFinSugerida: (anio) => `${anio}-07-31` },
+];
+
+export const TIPOS_CICLO_MAP = {
+  1: TIPOS_CICLO[0],
+  2: TIPOS_CICLO[1],
+  3: TIPOS_CICLO[2],
 };
 
 export const DIAS_SEMANA = [

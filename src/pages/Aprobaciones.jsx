@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   Loader2, Check, X as XIcon, Trash2, Edit2, RefreshCw, Inbox,
-  Clock, Calendar, MapPin, User, MessageSquare, History,
+  Clock, Calendar, MapPin, User, MessageSquare, History, Bus,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -13,7 +13,7 @@ import {
   eliminarReserva,
 } from '../services/reservasService';
 import { crearNotificacion } from '../services/notificacionesService';
-import { TIPOS_NOTIFICACION, ESTADOS_RESERVA, ESTADOS_RESERVA_LABEL, ESTADOS_RESERVA_COLOR } from '../lib/constants';
+import { TIPOS_NOTIFICACION, ESTADOS_RESERVA, ESTADOS_RESERVA_LABEL, ESTADOS_RESERVA_COLOR, TIPOS_RESERVA } from '../lib/constants';
 import { formatearFechaCorta } from '../utils/dateHelpers';
 import TarjetaReserva from '../components/reservas/TarjetaReserva';
 import EditarReservaModal from '../components/reservas/EditarReservaModal';
@@ -256,14 +256,24 @@ function DetalleReserva({ reserva, nota, setNota, accion, onAprobar, onRechazar,
   const esPendiente = reserva.estado === ESTADOS_RESERVA.PENDIENTE;
   const esAprobada = reserva.estado === ESTADOS_RESERVA.APROBADA;
   const fechas = reserva.ocurrencias || [reserva.fechaInicio];
+  const esTour = reserva.tipo === TIPOS_RESERVA.TOUR;
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-5">
       <div className="flex items-start justify-between mb-4 pb-4 border-b border-gray-200">
         <div>
-          <p className="text-xs text-gray-500 uppercase tracking-wider">Solicitud</p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Solicitud</p>
+            {esTour && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-full border border-purple-200">
+                <Bus size={10} /> Tour UTEC
+              </span>
+            )}
+          </div>
           <h2 className="text-xl font-semibold text-gray-900 mt-1">
-            {reserva.asignatura || reserva.motivo || 'Sin título'}
+            {esTour
+              ? (reserva.colegio || 'Sin institución')
+              : (reserva.asignatura || reserva.motivo || 'Sin título')}
           </h2>
         </div>
         <span className={`text-xs px-3 py-1 ${colores.badge} text-white rounded font-bold uppercase`}>
@@ -271,9 +281,19 @@ function DetalleReserva({ reserva, nota, setNota, accion, onAprobar, onRechazar,
         </span>
       </div>
 
+      {esTour && reserva.colegio && (
+        <div className="mb-4 flex items-start gap-2 bg-purple-50 border border-purple-200 rounded-lg px-4 py-3">
+          <Bus size={16} className="text-purple-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs text-purple-700 font-semibold uppercase">Institución visitante</p>
+            <p className="text-sm font-medium text-purple-900 mt-0.5">{reserva.colegio}</p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
-          <p className="text-xs text-gray-500 uppercase">Docente</p>
+          <p className="text-xs text-gray-500 uppercase">{esTour ? 'Solicitante' : 'Docente'}</p>
           <p className="text-sm font-medium mt-1 flex items-center gap-1.5">
             <User size={14} className="text-gray-400" />
             {reserva.docenteNombre}

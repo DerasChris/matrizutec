@@ -10,6 +10,8 @@ import SinPermiso from './pages/SinPermiso';
 import CuentaDesactivada from './pages/CuentaDesactivada';
 import MatrizLab from './pages/admin/MatrizLab';
 import GestionUsuarios from './pages/admin/GestionUsuarios';
+import GestionCiclos from './pages/admin/GestionCiclos';
+import SolicitudPublica from './pages/SolicitudPublica';
 import Reservar from './pages/Reservar';
 import MisReservas from './pages/MisReservas';
 import Aprobaciones from './pages/Aprobaciones';
@@ -28,6 +30,9 @@ export default function App() {
           }}
         />
         <Routes>
+          {/* Ruta pública — sin autenticación requerida */}
+          <Route path="/solicitud" element={<SolicitudPublica />} />
+
           <Route path="/login" element={<Login />} />
           <Route path="/registro" element={<Registro />} />
           <Route path="/cuenta-desactivada" element={<CuentaDesactivada />} />
@@ -61,6 +66,12 @@ export default function App() {
             <Route path="/admin/usuarios" element={
               <ProtectedRoute rolesPermitidos={[ROLES.JEFA]}>
                 <GestionUsuarios />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/admin/ciclos" element={
+              <ProtectedRoute rolesPermitidos={[ROLES.ENCARGADO, ROLES.JEFA]}>
+                <GestionCiclos />
               </ProtectedRoute>
             } />
 

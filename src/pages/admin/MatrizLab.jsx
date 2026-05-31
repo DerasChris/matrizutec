@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { obtenerLaboratorios, obtenerCicloActivo } from '../../services/laboratoriosService';
+import { ROLES } from '../../lib/constants';
 import { obtenerClasesDelLabPorMes } from '../../services/clasesService';
 import { obtenerReservasAprobadasFuturas } from '../../services/reservasService';
 import { MESES } from '../../lib/constants';
@@ -11,6 +13,7 @@ import ClaseFormulario from '../../components/admin/ClaseFormulario';
 import DetalleReservaModal from '../../components/admin/DetalleReservaModal';
 
 export default function MatrizLab() {
+  const { perfil } = useAuth();
   const [labs, setLabs] = useState([]);
   const [ciclo, setCiclo] = useState(null);
   const [labSel, setLabSel] = useState(null);
@@ -37,9 +40,16 @@ export default function MatrizLab() {
         obtenerLaboratorios(),
         obtenerCicloActivo(),
       ]);
-      setLabs(labsData);
+      const labsFiltrados =
+        perfil?.rol === ROLES.ENCARGADO &&
+        Array.isArray(perfil?.labsAsignados) &&
+        perfil.labsAsignados.length > 0
+          ? labsData.filter(l => perfil.labsAsignados.includes(l.id))
+          : labsData;
+
+      setLabs(labsFiltrados);
       setCiclo(cicloData);
-      if (labsData.length > 0) setLabSel(labsData[0]);
+      if (labsFiltrados.length > 0) setLabSel(labsFiltrados[0]);
       if (!cicloData) {
         toast.error('No hay un ciclo activo. Crea uno desde el dashboard.');
       }

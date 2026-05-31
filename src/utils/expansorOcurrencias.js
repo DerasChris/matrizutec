@@ -8,6 +8,7 @@ export function expandirOcurrencias(datos) {
 
   switch (tipo) {
     case TIPOS_RESERVA.UNICA:
+    case TIPOS_RESERVA.TOUR:
       resultado = fechaInicio ? [fechaInicio] : [];
       break;
 

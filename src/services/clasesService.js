@@ -10,6 +10,7 @@ import {
   getDocs,
   getDoc,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import { COLECCIONES, TIPOS_CLASE } from '../lib/constants';
 
@@ -71,6 +72,32 @@ export async function obtenerClasesDelLab(labId, cicloId, soloActivas = true) {
   }
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function importarClases(cicloId, clases) {
+  const colRef = collection(db, COLECCIONES.CLASES_REGULARES);
+  const CHUNK = 499;
+
+  const q = query(colRef, where('cicloId', '==', cicloId));
+  const existing = await getDocs(q);
+
+  for (let i = 0; i < existing.docs.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    existing.docs.slice(i, i + CHUNK).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  const ts = serverTimestamp();
+  for (let i = 0; i < clases.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    clases.slice(i, i + CHUNK).forEach(clase => {
+      const newRef = doc(colRef);
+      batch.set(newRef, { ...clase, creadoEn: ts, actualizadoEn: ts });
+    });
+    await batch.commit();
+  }
+
+  return { eliminadas: existing.docs.length, importadas: clases.length };
 }
 
 export async function obtenerClasesDelLabPorMes(labId, cicloId, anio, mes) {

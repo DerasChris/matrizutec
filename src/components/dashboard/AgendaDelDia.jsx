@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Clock, Bookmark, BookOpen, CalendarPlus, Calendar } from 'lucide-react';
+import { Clock, Bookmark, BookOpen, CalendarPlus, Calendar, Bus } from 'lucide-react';
 import {
   estaEnRango,
   haPasado,
@@ -7,7 +7,7 @@ import {
   formatearHora,
   ordenarPorHoraInicio,
 } from '../../utils/dateHelpers';
-import { MODULOS_LAB_03 } from '../../lib/constants';
+import { MODULOS_LAB_03, TIPOS_RESERVA } from '../../lib/constants';
 
 export default function AgendaDelDia({ clases = [], reservas = [], labNombre }) {
   const [vista, setVista] = useState('actual');
@@ -17,18 +17,22 @@ export default function AgendaDelDia({ clases = [], reservas = [], labNombre }) 
     const todos = [
       ...clases.map(c => ({
         ...c,
-        tipo: 'clase',
+        _tipoItem: 'clase',
         titulo: `${c.codigoAsignatura || ''} · ${c.nombreAsignatura || ''}`.trim().replace(/^·\s*/, ''),
         subtitulo: c.docente,
         meta: c.inscritos ? `${c.inscritos} inscritos` : null,
+        esTour: false,
         modulos: c.modulos || [],
       })),
       ...reservas.map(r => ({
         ...r,
-        tipo: 'reserva',
-        titulo: r.asignatura || r.motivo || 'Reserva docente',
-        subtitulo: r.docenteNombre,
-        meta: 'Reserva aprobada',
+        _tipoItem: 'reserva',
+        titulo: r.tipo === TIPOS_RESERVA.TOUR
+          ? `Tour UTEC – ${r.colegio || ''}`
+          : (r.asignatura || r.motivo || 'Reserva docente'),
+        subtitulo: r.tipo === TIPOS_RESERVA.TOUR ? r.colegio : r.docenteNombre,
+        meta: r.tipo === TIPOS_RESERVA.TOUR ? 'Tour UTEC' : 'Reserva aprobada',
+        esTour: r.tipo === TIPOS_RESERVA.TOUR,
         modulos: r.modulos || [],
       })),
     ];
@@ -143,21 +147,23 @@ export default function AgendaDelDia({ clases = [], reservas = [], labNombre }) 
 }
 
 function ItemAgenda({ item }) {
-  const { activa, pasada, tipo } = item;
+  const { activa, pasada, _tipoItem: tipo } = item;
 
   let estilos;
   if (activa) {
-    estilos = tipo === 'reserva'
-      ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-400'
-      : 'bg-red-50 border-red-300 ring-2 ring-red-400';
+    estilos = item.esTour
+      ? 'bg-purple-50 border-purple-300 ring-2 ring-purple-400'
+      : tipo === 'reserva'
+        ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-400'
+        : 'bg-red-50 border-red-300 ring-2 ring-red-400';
   } else if (pasada) {
     estilos = 'bg-gray-50 border-gray-200 opacity-60';
   } else {
     estilos = 'bg-white border-gray-200 hover:border-gray-300';
   }
 
-  const Icono = tipo === 'reserva' ? Bookmark : BookOpen;
-  const colorIcono = tipo === 'reserva' ? 'text-orange-600' : 'text-blue-600';
+  const Icono = item.esTour ? Bus : (tipo === 'reserva' ? Bookmark : BookOpen);
+  const colorIcono = item.esTour ? 'text-purple-600' : (tipo === 'reserva' ? 'text-orange-600' : 'text-blue-600');
 
   return (
     <div className={`flex items-start gap-3 p-3 border rounded-lg transition-all ${estilos}`}>
@@ -197,7 +203,7 @@ function ItemAgenda({ item }) {
       <div className="flex-shrink-0 text-right mt-0.5">
         {activa && (
           <span className={`inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full text-white ${
-            tipo === 'reserva' ? 'bg-orange-600' : 'bg-red-600'
+            item.esTour ? 'bg-purple-600' : tipo === 'reserva' ? 'bg-orange-600' : 'bg-red-600'
           } animate-pulse`}>
             AHORA
           </span>
