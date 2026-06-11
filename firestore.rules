@@ -7,10 +7,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function emailDominio() {
-      return request.auth.token.email.matches('.*@gmail[.]com$');
-    }
-
     function getRol(uid) {
       return get(/databases/$(database)/documents/usuarios/$(uid)).data.rol;
     }
@@ -46,7 +42,6 @@ service cloud.firestore {
       allow read: if isAuth() && (request.auth.uid == userId || esAdmin());
       allow create: if isAuth()
                     && request.auth.uid == userId
-                    && emailDominio()
                     && request.resource.data.rol == 'docente'
                     && request.resource.data.activo == true;
       allow update: if isAuth() && (

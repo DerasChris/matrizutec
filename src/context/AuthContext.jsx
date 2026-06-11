@@ -131,7 +131,7 @@ export function AuthProvider({ children }) {
         ? ROLES.JEFA
         : ROLES.DOCENTE;
 
-      await setDoc(ref, {
+      const nuevoPerfil = {
         uid: result.user.uid,
         email: email.trim(),
         nombre: nombre || email.split('@')[0],
@@ -142,7 +142,11 @@ export function AuthProvider({ children }) {
         proveedor: 'password',
         creadoEn: serverTimestamp(),
         ultimoAcceso: serverTimestamp(),
-      });
+      };
+
+      await setDoc(ref, nuevoPerfil);
+      // Setear perfil directo para no depender de que onAuthStateChanged lo re-lea
+      setPerfil({ id: result.user.uid, ...nuevoPerfil });
 
       return result.user;
     } catch (e) {
