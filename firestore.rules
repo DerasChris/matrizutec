@@ -77,15 +77,16 @@ service cloud.firestore {
     }
 
     match /reservas/{reservaId} {
-      allow read: if isAuth() && (esAdmin() || resource.data.docenteId == request.auth.uid)
-                  || !isAuth(); // Lectura pública para verificar disponibilidad
+      // Lectura: admins ven todo, docentes ven las suyas, público puede leer para verificar disponibilidad
+      allow read: if (isAuth() && (esAdmin() || resource.data.docenteId == request.auth.uid))
+                  || true;
 
       allow create: if
-        // Usuario interno autenticado y activo
+        // Usuario interno autenticado y activo creando su propia reserva
         (isAuth() && usuarioActivo() && request.resource.data.docenteId == request.auth.uid && request.resource.data.estado == 'pendiente')
         ||
-        // Solicitud pública sin autenticación
-        (!isAuth() && esSolicitudPublica());
+        // Solicitud pública — permitida con o sin sesión abierta
+        esSolicitudPublica();
 
       allow update: if isAuth() && (
         (esJefa() && usuarioActivo())

@@ -4,6 +4,7 @@ dist-ssr
 *.local
 .env
 .env.local
+functions/.env
 .env.production
 .firebase
 .DS_Store

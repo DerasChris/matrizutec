@@ -6,10 +6,6 @@ admin.initializeApp();
 
 const FROM_ADDRESS = 'LabTrack UTEC <onboarding@resend.dev>';
 
-/**
- * Se dispara cuando se crea un documento en la colección `mail/`.
- * Llama a Resend y actualiza el documento con el estado de entrega.
- */
 exports.procesarEmailQueue = functions.firestore
   .document('mail/{mailId}')
   .onCreate(async (snap) => {
@@ -25,11 +21,13 @@ exports.procesarEmailQueue = functions.firestore
       return null;
     }
 
-    const apiKey = functions.config().resend?.api_key;
+    const apiKey = process.env.RESEND_API_KEY;
+
     if (!apiKey) {
+      functions.logger.error('RESEND_API_KEY no encontrada en variables de entorno');
       await snap.ref.update({
         'delivery.state': 'ERROR',
-        'delivery.error': 'API key de Resend no configurada. Corre: firebase functions:config:set resend.api_key="re_xxx"',
+        'delivery.error': 'RESEND_API_KEY no configurada en functions/.env',
         'delivery.attempts': 1,
       });
       return null;
@@ -37,11 +35,20 @@ exports.procesarEmailQueue = functions.firestore
 
     const resend = new Resend(apiKey);
 
+    // Si OVERRIDE_TO_EMAIL está definido (modo sin dominio verificado),
+    // todos los emails van a ese correo con el destinatario real en el asunto.
+    const overrideTo = process.env.OVERRIDE_TO_EMAIL;
+    const realTo = Array.isArray(to) ? to.join(', ') : to;
+    const finalTo = overrideTo ? [overrideTo] : (Array.isArray(to) ? to : [to]);
+    const finalSubject = overrideTo
+      ? `[Para: ${realTo}] ${message.subject}`
+      : message.subject;
+
     try {
       const { data: resendData, error } = await resend.emails.send({
         from: FROM_ADDRESS,
-        to: Array.isArray(to) ? to : [to],
-        subject: message.subject,
+        to: finalTo,
+        subject: finalSubject,
         ...(message.html && { html: message.html }),
         ...(message.text && { text: message.text }),
       });

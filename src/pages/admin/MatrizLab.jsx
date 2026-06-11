@@ -158,17 +158,35 @@ export default function MatrizLab() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-medium text-gray-600 mb-1">Laboratorio</label>
-            <select
-              value={labSel?.id || ''}
-              onChange={e => setLabSel(labs.find(l => l.id === e.target.value))}
-              className="input-base"
-            >
-              {labs.map(l => (
-                <option key={l.id} value={l.id}>
-                  {l.nombre}{l.tieneModulos ? ' (con módulos)' : ''}
-                </option>
-              ))}
-            </select>
+            {perfil?.rol === ROLES.ENCARGADO ? (
+              <div className="flex flex-wrap gap-2">
+                {labs.map(l => (
+                  <button
+                    key={l.id}
+                    onClick={() => setLabSel(l)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                      labSel?.id === l.id
+                        ? 'bg-utec-primary text-white border-utec-primary'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-utec-primary hover:text-utec-primary'
+                    }`}
+                  >
+                    {l.nombre}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <select
+                value={labSel?.id || ''}
+                onChange={e => setLabSel(labs.find(l => l.id === e.target.value))}
+                className="input-base"
+              >
+                {labs.map(l => (
+                  <option key={l.id} value={l.id}>
+                    {l.nombre}{l.tieneModulos ? ' (con módulos)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="flex items-end gap-1">
