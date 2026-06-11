@@ -17,6 +17,7 @@ import MisReservas from './pages/MisReservas';
 import Aprobaciones from './pages/Aprobaciones';
 import { ROLES } from './lib/constants';
 import Servicios from './pages/Servicios';
+import RegistroActividad from './pages/admin/RegistroActividad';
 
 export default function App() {
   return (
@@ -90,6 +91,12 @@ export default function App() {
             <Route path="/aprobaciones" element={
               <ProtectedRoute rolesPermitidos={[ROLES.JEFA]}>
                 <Aprobaciones />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/admin/registro" element={
+              <ProtectedRoute rolesPermitidos={[ROLES.JEFA]}>
+                <RegistroActividad />
               </ProtectedRoute>
             } />
           </Route>

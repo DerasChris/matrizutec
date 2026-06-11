@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   Loader2, Check, X as XIcon, Trash2, Edit2, RefreshCw, Inbox,
-  Clock, Calendar, MapPin, User, MessageSquare, History, Bus,
+  Clock, Calendar, MapPin, User, MessageSquare, History, Bus, Monitor,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -13,7 +13,8 @@ import {
   eliminarReserva,
 } from '../services/reservasService';
 import { crearNotificacion } from '../services/notificacionesService';
-import { TIPOS_NOTIFICACION, ESTADOS_RESERVA, ESTADOS_RESERVA_LABEL, ESTADOS_RESERVA_COLOR, TIPOS_RESERVA } from '../lib/constants';
+import { TIPOS_NOTIFICACION, ESTADOS_RESERVA, ESTADOS_RESERVA_LABEL, ESTADOS_RESERVA_COLOR, TIPOS_RESERVA, SOFTWARE_DISPONIBLE } from '../lib/constants';
+import { registrarActividad } from '../services/logService';
 import { formatearFechaCorta } from '../utils/dateHelpers';
 import TarjetaReserva from '../components/reservas/TarjetaReserva';
 import EditarReservaModal from '../components/reservas/EditarReservaModal';
@@ -75,6 +76,13 @@ export default function Aprobaciones() {
         console.warn('Notificación no enviada:', e);
       }
 
+      await registrarActividad({
+        tipo: 'reserva_aprobada',
+        descripcion: `Reserva aprobada: "${seleccionada.asignatura || seleccionada.motivo || 'Tour UTEC'}" en ${seleccionada.labNombre}`,
+        usuario: perfil,
+        entidad: { tipo: 'reserva', id: seleccionada.id },
+      });
+
       toast.success('Reserva aprobada y notificada al docente');
       setNota('');
       await cargar();
@@ -110,6 +118,13 @@ export default function Aprobaciones() {
         console.warn('Notificación no enviada:', e);
       }
 
+      await registrarActividad({
+        tipo: 'reserva_rechazada',
+        descripcion: `Reserva rechazada: "${seleccionada.asignatura || seleccionada.motivo || 'Tour UTEC'}" en ${seleccionada.labNombre}. Motivo: ${nota.trim()}`,
+        usuario: perfil,
+        entidad: { tipo: 'reserva', id: seleccionada.id },
+      });
+
       toast.success('Reserva rechazada y notificada al docente');
       setNota('');
       await cargar();
@@ -142,6 +157,14 @@ export default function Aprobaciones() {
       }
 
       await eliminarReserva(seleccionada.id);
+
+      await registrarActividad({
+        tipo: 'reserva_eliminada',
+        descripcion: `Reserva eliminada: "${seleccionada.asignatura || seleccionada.motivo || 'Tour UTEC'}" en ${seleccionada.labNombre} de ${seleccionada.docenteNombre}`,
+        usuario: perfil,
+        entidad: { tipo: 'reserva', id: seleccionada.id },
+      });
+
       toast.success('Reserva eliminada');
       setSeleccionada(null);
       await cargar();
@@ -344,6 +367,30 @@ function DetalleReserva({ reserva, nota, setNota, accion, onAprobar, onRechazar,
         <div className="mb-4 bg-gray-50 rounded-lg p-3">
           <p className="text-xs text-gray-500 uppercase mb-1">Detalle / motivo</p>
           <p className="text-sm text-gray-800">{reserva.motivo}</p>
+        </div>
+      )}
+
+      {((reserva.programas?.length > 0) || reserva.programasOtros) && (
+        <div className="mb-4 bg-gray-50 rounded-lg p-3">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Monitor size={14} className="text-gray-500" />
+            <p className="text-xs text-gray-500 uppercase font-semibold">Software requerido</p>
+          </div>
+          {reserva.programas?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              {reserva.programas.map(id => {
+                const sw = SOFTWARE_DISPONIBLE.find(s => s.id === id);
+                return sw ? (
+                  <span key={id} className="text-[11px] bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full">
+                    {sw.label}
+                  </span>
+                ) : null;
+              })}
+            </div>
+          )}
+          {reserva.programasOtros && (
+            <p className="text-sm text-gray-700 italic">"{reserva.programasOtros}"</p>
+          )}
         </div>
       )}
 

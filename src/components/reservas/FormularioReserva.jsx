@@ -4,8 +4,9 @@ import {
   Calendar, CalendarRange, Repeat, CalendarDays, Plus, X, Send, Loader2, Bus,
 } from 'lucide-react';
 import {
-  TIPOS_RESERVA, TIPOS_RESERVA_LABEL, DIAS_SEMANA, FRANJAS_HORARIAS,
+  TIPOS_RESERVA, TIPOS_RESERVA_LABEL, DIAS_SEMANA, FRANJAS_HORARIAS, SOFTWARE_DISPONIBLE,
 } from '../../lib/constants';
+import { Monitor } from 'lucide-react';
 import { horaToMinutos, fechaActualISO } from '../../utils/dateHelpers';
 import { expandirOcurrencias } from '../../utils/expansorOcurrencias';
 import { validarConflictosReserva } from '../../utils/validadorConflictos';
@@ -31,6 +32,8 @@ const ESTADO_VACIO = {
   fechaFin: '',
   diasSemana: [],
   fechasEspecificas: [],
+  programas: [],
+  programasOtros: '',
 };
 
 const TIPOS = [
@@ -118,6 +121,15 @@ export default function FormularioReserva({ labs, perfil, emailJefa, onCreado })
     }));
   }
 
+  function togglePrograma(id) {
+    setForm(f => ({
+      ...f,
+      programas: f.programas.includes(id)
+        ? f.programas.filter(p => p !== id)
+        : [...f.programas, id],
+    }));
+  }
+
   function agregarFechaEspecifica() {
     if (!nuevaFecha) return;
     if (form.fechasEspecificas.includes(nuevaFecha)) { toast.error('Esa fecha ya fue agregada'); return; }
@@ -190,6 +202,8 @@ export default function FormularioReserva({ labs, perfil, emailJefa, onCreado })
         diasSemana: form.diasSemana,
         fechasEspecificas: form.fechasEspecificas,
         ocurrencias,
+        programas: form.programas,
+        programasOtros: form.programasOtros.trim(),
       };
 
       const creada = await crearReserva(reserva);
@@ -466,6 +480,38 @@ export default function FormularioReserva({ labs, perfil, emailJefa, onCreado })
             ))}
           </div>
           {errores.modulos && <p className="text-xs text-red-600 mt-1">{errores.modulos}</p>}
+        </div>
+      )}
+
+      {/* ── Software requerido ── */}
+      {!esTour && (
+        <div className="border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Monitor size={14} className="text-utec-primary" />
+            <label className="text-sm font-medium text-gray-700">
+              Software o paquetería requerida <span className="text-gray-400 font-normal">(opcional)</span>
+            </label>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-3">
+            {SOFTWARE_DISPONIBLE.map(sw => (
+              <label key={sw.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.programas.includes(sw.id)}
+                  onChange={() => togglePrograma(sw.id)}
+                  className="rounded border-gray-300 text-utec-primary"
+                />
+                <span className="text-gray-700">{sw.label}</span>
+              </label>
+            ))}
+          </div>
+          <input
+            type="text"
+            value={form.programasOtros}
+            onChange={e => actualizar('programasOtros', e.target.value)}
+            placeholder="Otro software no listado..."
+            className="input-base text-sm"
+          />
         </div>
       )}
 

@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { registrarActividad } from '../../services/logService';
 import { X, AlertTriangle, Calendar, Repeat, Clock, Trash2, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -6,6 +8,8 @@ import {
   TIPOS_CLASE,
   TIPOS_CLASE_LABEL,
   FRANJAS_HORARIAS,
+  PALETA_COLORES_CLASES,
+  colorPorCodigo,
 } from '../../lib/constants';
 import { detectarColisiones } from '../../utils/matrizHelpers';
 import { horaToMinutos, formatearHora } from '../../utils/dateHelpers';
@@ -25,6 +29,7 @@ const ESTADO_VACIO = {
   fechaInicio: '',
   fechaFin: '',
   observaciones: '',
+  color: '',
 };
 
 export default function ClaseFormulario({
@@ -37,6 +42,7 @@ export default function ClaseFormulario({
   sugerencia,
   todasLasClases = [],
 }) {
+  const { perfil } = useAuth();
   const [form, setForm] = useState(ESTADO_VACIO);
   const [guardando, setGuardando] = useState(false);
   const [errores, setErrores] = useState({});
@@ -51,6 +57,7 @@ export default function ClaseFormulario({
         inscritos: claseEditando.inscritos ?? '',
         modulos: claseEditando.modulos || [],
         diasSemana: claseEditando.diasSemana || [],
+        color: claseEditando.color || '',
       });
     } else {
       setForm({
@@ -174,13 +181,26 @@ export default function ClaseFormulario({
         fechaInicio: form.fechaInicio,
         fechaFin: form.tipo === TIPOS_CLASE.PUNTUAL ? form.fechaInicio : form.fechaFin,
         observaciones: form.observaciones.trim(),
+        color: form.color || null,
       };
 
       if (claseEditando) {
         await actualizarClase(claseEditando.id, payload);
+        await registrarActividad({
+          tipo: 'clase_editada',
+          descripcion: `Clase editada: ${payload.nombreAsignatura} (${payload.codigoAsignatura}) en ${lab.nombre}`,
+          usuario: perfil,
+          entidad: { tipo: 'clase', id: claseEditando.id },
+        });
         toast.success('Clase actualizada');
       } else {
-        await crearClase(payload);
+        const nueva = await crearClase(payload);
+        await registrarActividad({
+          tipo: 'clase_creada',
+          descripcion: `Clase creada: ${payload.nombreAsignatura} (${payload.codigoAsignatura}) en ${lab.nombre}`,
+          usuario: perfil,
+          entidad: { tipo: 'clase', id: nueva?.id || null },
+        });
         toast.success('Clase creada');
       }
       onGuardado?.();
@@ -198,6 +218,12 @@ export default function ClaseFormulario({
     if (!confirm('¿Desactivar esta clase? Dejará de aparecer en la matriz pero se conserva el histórico.')) return;
     try {
       await desactivarClase(claseEditando.id);
+      await registrarActividad({
+        tipo: 'clase_desactivada',
+        descripcion: `Clase desactivada: ${claseEditando.nombreAsignatura} (${claseEditando.codigoAsignatura}) en ${lab.nombre}`,
+        usuario: perfil,
+        entidad: { tipo: 'clase', id: claseEditando.id },
+      });
       toast.success('Clase desactivada');
       onGuardado?.();
       onCerrar();
@@ -212,6 +238,12 @@ export default function ClaseFormulario({
     if (!confirm('¿Eliminar permanentemente esta clase? Esta acción no se puede deshacer.')) return;
     try {
       await eliminarClase(claseEditando.id);
+      await registrarActividad({
+        tipo: 'clase_eliminada',
+        descripcion: `Clase eliminada: ${claseEditando.nombreAsignatura} (${claseEditando.codigoAsignatura}) en ${lab.nombre}`,
+        usuario: perfil,
+        entidad: { tipo: 'clase', id: claseEditando.id },
+      });
       toast.success('Clase eliminada');
       onGuardado?.();
       onCerrar();
@@ -463,6 +495,69 @@ export default function ClaseFormulario({
               )}
             </div>
           )}
+
+          {/* ── Selector de color ── */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Color en la matriz</label>
+            <div className="flex flex-wrap gap-2 items-center">
+              {/* Opción auto */}
+              <button
+                type="button"
+                onClick={() => actualizar('color', '')}
+                title="Automático (basado en el código)"
+                className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-[10px] font-bold text-gray-500 transition-all ${
+                  !form.color
+                    ? 'border-gray-700 ring-2 ring-gray-400 scale-110'
+                    : 'border-gray-300 hover:border-gray-500'
+                }`}
+                style={{ background: 'linear-gradient(135deg, #d1d5db 50%, #f3f4f6 50%)' }}
+              >
+                A
+              </button>
+              {PALETA_COLORES_CLASES.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => actualizar('color', c)}
+                  title={c}
+                  className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${
+                    form.color === c
+                      ? 'border-gray-800 ring-2 ring-offset-1 ring-gray-500 scale-110'
+                      : 'border-transparent hover:border-gray-400'
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              {form.color ? (
+                <>
+                  <span
+                    className="inline-block w-4 h-4 rounded-full border border-gray-300 shrink-0"
+                    style={{ backgroundColor: form.color }}
+                  />
+                  <p className="text-xs text-gray-600">Color personalizado</p>
+                  <button
+                    type="button"
+                    onClick={() => actualizar('color', '')}
+                    className="text-xs text-red-500 hover:underline"
+                  >
+                    Restablecer auto
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span
+                    className="inline-block w-4 h-4 rounded-full border border-gray-300 shrink-0"
+                    style={{ backgroundColor: form.codigoAsignatura ? colorPorCodigo(form.codigoAsignatura) : '#9ca3af' }}
+                  />
+                  <p className="text-xs text-gray-500">
+                    Automático según código{form.codigoAsignatura ? ` (${form.codigoAsignatura})` : ''}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Observaciones</label>

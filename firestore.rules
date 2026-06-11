@@ -116,5 +116,11 @@ service cloud.firestore {
       allow read: if isAuth();
       allow write: if esJefa();
     }
+
+    match /actividadLog/{logId} {
+      allow read: if isAuth() && esAdmin();
+      allow create: if isAuth() && usuarioActivo();
+      allow update, delete: if false;
+    }
   }
 }

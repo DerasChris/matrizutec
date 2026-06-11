@@ -10,8 +10,9 @@ import {
 import { COLECCIONES, FRANJAS_HORARIAS, DIAS_SEMANA } from '../lib/constants';
 import {
   CheckCircle2, Clock, AlertTriangle, Send, Loader2, CalendarCheck,
-  FlaskConical, User, Mail, Building2, BookOpen, MessageSquare, ChevronDown,
+  FlaskConical, User, Mail, Building2, BookOpen, MessageSquare, ChevronDown, Monitor,
 } from 'lucide-react';
+import { SOFTWARE_DISPONIBLE } from '../lib/constants';
 
 /* ── helpers ── */
 function horaMin(h) {
@@ -87,6 +88,8 @@ export default function SolicitudPublica() {
   const [horaInicio, setHoraInicio] = useState('08:00');
   const [horaFin, setHoraFin] = useState('10:00');
   const [proposito, setProposito] = useState('');
+  const [programas, setProgramas] = useState([]);
+  const [programasOtros, setProgramasOtros] = useState('');
 
   // Disponibilidad
   const [disponibilidad, setDisponibilidad] = useState([]);
@@ -157,17 +160,17 @@ export default function SolicitudPublica() {
 
   function validar() {
     const e = {};
-    if (!nombre.trim()) e.nombre = 'Tu nombre es requerido';
-    if (!correo.trim()) e.correo = 'Tu correo es requerido';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) e.correo = 'Correo inválido';
-    if (!facultad) e.facultad = 'Selecciona una facultad';
-    if (facultad === 'Otra unidad / Departamento' && !otraFacultad.trim()) e.otraFacultad = 'Indica tu unidad';
-    if (!labId) e.labId = 'Selecciona un laboratorio';
-    if (!fecha) e.fecha = 'Indica la fecha';
-    else if (fecha < HOY) e.fecha = 'No puedes reservar en fechas pasadas';
+    if (!nombre.trim()) e.nombre = 'El nombre es requerido';
+    if (!correo.trim()) e.correo = 'El correo electrónico es requerido';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) e.correo = 'Correo electrónico inválido';
+    if (!facultad) e.facultad = 'Seleccione una facultad';
+    if (facultad === 'Otra unidad / Departamento' && !otraFacultad.trim()) e.otraFacultad = 'Indique su unidad';
+    if (!labId) e.labId = 'Seleccione un laboratorio';
+    if (!fecha) e.fecha = 'Indique la fecha';
+    else if (fecha < HOY) e.fecha = 'No es posible reservar en fechas pasadas';
     if (horaMin(horaFin) <= horaMin(horaInicio)) e.horario = 'La hora de fin debe ser posterior a la de inicio';
-    if (!proposito.trim()) e.proposito = 'Describe el propósito de uso';
-    else if (proposito.trim().length < 20) e.proposito = 'Por favor sé más descriptivo (mínimo 20 caracteres)';
+    if (!proposito.trim()) e.proposito = 'Describa el propósito de uso';
+    else if (proposito.trim().length < 20) e.proposito = 'Por favor sea más descriptivo (mínimo 20 caracteres)';
     setErrores(e);
     return Object.keys(e).length === 0;
   }
@@ -205,6 +208,8 @@ export default function SolicitudPublica() {
         // Campos extra para solicitudes externas
         esExterno: true,
         facultad: facultadFinal,
+        programas,
+        programasOtros: programasOtros.trim(),
         creadaEn: serverTimestamp(),
         actualizadaEn: serverTimestamp(),
       };
@@ -232,7 +237,7 @@ export default function SolicitudPublica() {
       setEnviado(true);
     } catch (err) {
       console.error(err);
-      alert('Ocurrió un error al enviar tu solicitud. Por favor intenta de nuevo o contacta directamente a jefatura.');
+      alert('Ocurrió un error al enviar su solicitud. Por favor intente de nuevo o contacte directamente a jefatura.');
     } finally {
       setEnviando(false);
     }
@@ -246,16 +251,16 @@ export default function SolicitudPublica() {
           <CalendarCheck size={56} className="mx-auto text-green-500 mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 mb-2">¡Solicitud enviada!</h1>
           <p className="text-gray-600 mb-4">
-            Tu solicitud fue registrada correctamente. Jefatura recibirá una notificación
-            para revisarla y te contactará a <strong>{correo}</strong> con la respuesta.
+            Su solicitud fue registrada correctamente. Jefatura recibirá una notificación
+            para revisarla y le contactará a <strong>{correo}</strong> con la respuesta.
           </p>
           <div className="bg-gray-50 rounded-xl px-6 py-4 mb-6 border border-gray-200">
             <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Número de referencia</p>
             <p className="text-2xl font-bold font-mono text-utec-primary">{refId}</p>
-            <p className="text-xs text-gray-500 mt-1">Guarda este número por cualquier consulta</p>
+            <p className="text-xs text-gray-500 mt-1">Guarde este número para cualquier consulta</p>
           </div>
           <button
-            onClick={() => { setEnviado(false); setNombre(''); setCorreo(''); setFacultad(''); setOtraFacultad(''); setLabId(''); setFecha(''); setProposito(''); setErrores({}); }}
+            onClick={() => { setEnviado(false); setNombre(''); setCorreo(''); setFacultad(''); setOtraFacultad(''); setLabId(''); setFecha(''); setProposito(''); setProgramas([]); setProgramasOtros(''); setErrores({}); }}
             className="text-sm text-utec-primary hover:underline"
           >
             Enviar otra solicitud
@@ -287,8 +292,8 @@ export default function SolicitudPublica() {
             Solicita un laboratorio de la FICA
           </h1>
           <p className="text-gray-600 max-w-xl mx-auto text-sm md:text-base">
-            Completa el formulario para solicitar el uso de un laboratorio de cómputo.
-            Jefatura revisará tu solicitud y te notificará por correo con la respuesta.
+            Complete el formulario para solicitar el uso de un laboratorio de cómputo.
+            Jefatura revisará su solicitud y le notificará por correo con la respuesta.
           </p>
         </div>
 
@@ -307,7 +312,7 @@ export default function SolicitudPublica() {
                   <Campo
                     label="Nombre completo *"
                     error={errores.nombre}
-                    hint="Tal como aparece en tu carné o documento"
+                    hint="Tal como aparece en su carné o documento"
                   >
                     <input
                       type="text"
@@ -321,7 +326,7 @@ export default function SolicitudPublica() {
                   <Campo
                     label="Correo electrónico *"
                     error={errores.correo}
-                    hint="Recibirás la respuesta de jefatura en este correo"
+                    hint="Recibirá la respuesta de jefatura en este correo"
                   >
                     <input
                       type="email"
@@ -432,6 +437,38 @@ export default function SolicitudPublica() {
                 </Campo>
               </FormSection>
 
+              {/* SECCIÓN 4: Software requerido */}
+              <FormSection icon={Monitor} titulo="¿Requiere software específico?" numero="4">
+                <p className="text-xs text-gray-500 mb-3">
+                  Opcional. Si la actividad requiere programas instalados en los equipos,
+                  indíquelos para que jefatura pueda preparar el laboratorio con anticipación.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-3">
+                  {SOFTWARE_DISPONIBLE.map(sw => (
+                    <label key={sw.id} className="flex items-center gap-2 text-sm cursor-pointer hover:text-utec-primary">
+                      <input
+                        type="checkbox"
+                        checked={programas.includes(sw.id)}
+                        onChange={() => setProgramas(prev =>
+                          prev.includes(sw.id) ? prev.filter(p => p !== sw.id) : [...prev, sw.id]
+                        )}
+                        className="rounded border-gray-300 text-utec-primary focus:ring-utec-primary"
+                      />
+                      <span className="text-gray-700">{sw.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <Campo label="Otro software no listado">
+                  <input
+                    type="text"
+                    value={programasOtros}
+                    onChange={e => setProgramasOtros(e.target.value)}
+                    placeholder="Ej. SPSS versión 25, Arduino IDE..."
+                    className={inputCls(null)}
+                  />
+                </Campo>
+              </FormSection>
+
               {/* Indicador de conflicto */}
               {labId && fecha && (
                 hayConflicto ? (
@@ -461,7 +498,7 @@ export default function SolicitudPublica() {
               </button>
 
               <p className="text-xs text-gray-400 text-center">
-                Al enviar aceptas que jefatura de la FICA revisará y decidirá sobre tu solicitud.
+                Al enviar acepta que jefatura de la FICA revisará y decidirá sobre su solicitud.
                 La aprobación no es automática.
               </p>
             </form>
@@ -540,7 +577,7 @@ export default function SolicitudPublica() {
                 <p>· Horario de laboratorios: <strong>06:30 – 20:00</strong></p>
                 <p>· Tu solicitud quedará en estado <strong>pendiente</strong> hasta que jefatura la revise.</p>
                 <p>· Recibirás una respuesta en tu correo. Revisa también tu carpeta de spam.</p>
-                <p>· Si tienes urgencia, contacta directamente a jefatura de la FICA.</p>
+                <p>· Si tiene urgencia, contacte directamente a jefatura de la FICA.</p>
               </div>
             </div>
           </div>

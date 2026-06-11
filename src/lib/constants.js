@@ -165,6 +165,22 @@ export const LABS_INICIALES = Array.from({ length: 14 }, (_, i) => {
   };
 });
 
+export const SOFTWARE_DISPONIBLE = [
+  { id: 'office',        label: 'Microsoft Office (Word, Excel, PowerPoint)' },
+  { id: 'autocad',       label: 'AutoCAD' },
+  { id: 'adobe',         label: 'Adobe Creative Suite (Photoshop, Illustrator, Premiere)' },
+  { id: 'netbeans',      label: 'NetBeans / Eclipse / IntelliJ IDEA' },
+  { id: 'vscode',        label: 'Visual Studio / VS Code' },
+  { id: 'mysql',         label: 'MySQL Workbench / SQL Server / pgAdmin' },
+  { id: 'packet_tracer', label: 'Cisco Packet Tracer' },
+  { id: 'matlab',        label: 'MATLAB / Octave' },
+  { id: 'python',        label: 'Python / Anaconda / Jupyter Notebook' },
+  { id: 'r_studio',      label: 'R / RStudio' },
+  { id: 'unity',         label: 'Unity / Unreal Engine' },
+  { id: 'solidworks',    label: 'SolidWorks / Inventor / Fusion 360' },
+  { id: 'spss',          label: 'SPSS / STATA / SAS (estadística)' },
+];
+
 export const PALETA_COLORES_CLASES = [
   '#185FA5', '#5C2C8A', '#2D8F60', '#854F0B', '#A32D2D',
   '#0E7490', '#9333EA', '#15803D', '#B45309', '#BE123C',

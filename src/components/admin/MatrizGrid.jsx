@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
-import { FRANJAS_HORARIAS, HORA_FIN_DIA } from '../../lib/constants';
+import { FRANJAS_HORARIAS } from '../../lib/constants';
 import {
   TOTAL_SLOTS,
   slotIndexAHora,
@@ -11,12 +11,24 @@ import {
 import { fechaActualISO } from '../../utils/dateHelpers';
 import BloqueClase from './BloqueClase';
 
-const ANCHO_LABEL_DIA = 110;
-const ANCHO_LABEL_MODULO = 42;
-const ANCHO_CIERRE = 28;
+// Slots 11 y 12 = 12:00-12:30 y 12:30-13:00 (almuerzo)
+const SLOTS_ALMUERZO = new Set([11, 12]);
 
-const ALTURA_FILA_NORMAL = 40;
-const ALTURA_FILA_MODULO = 28;
+const ANCHO_FECHA   = 52;
+const ANCHO_DIA     = 96;
+const ANCHO_MODULO  = 46;
+const ANCHO_TOTAL   = 80;
+
+const ALTURA_FILA_NORMAL = 54;
+const ALTURA_FILA_MODULO = 38;
+
+function formatTotalHoras(totalSlots) {
+  const mins = totalSlots * 30;
+  if (mins === 0) return '';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
 
 export default function MatrizGrid({
   lab,
@@ -38,14 +50,10 @@ export default function MatrizGrid({
 
   const hoy = fechaActualISO();
 
-  const diasDelMes = useMemo(
-    () => generarDiasDelMes(anio, mes),
-    [anio, mes]
-  );
+  const diasDelMes = useMemo(() => generarDiasDelMes(anio, mes), [anio, mes]);
 
   const filas = useMemo(() => {
     const resultado = [];
-
     for (const diaInfo of diasDelMes) {
       if (tieneModulos) {
         for (const modulo of lab.modulos) {
@@ -61,101 +69,79 @@ export default function MatrizGrid({
         resultado.push({ tipo: 'normal', diaInfo });
       }
     }
-
     return resultado;
   }, [diasDelMes, lab, tieneModulos]);
 
-  const alturaFila = tieneModulos
-    ? ALTURA_FILA_MODULO
-    : ALTURA_FILA_NORMAL;
+  // Total horas programadas por fecha (sumando todos los módulos si aplica)
+  const totalesPorFecha = useMemo(() => {
+    const map = {};
+    for (const diaInfo of diasDelMes) {
+      let slots = 0;
+      const modulos = tieneModulos ? lab.modulos.map(m => m.id) : [null];
+      for (const modId of modulos) {
+        const cf = clasesQueAplicanEnFecha(clases, diaInfo.fechaISO, diaInfo.diaSemana.id, modId);
+        const rf = reservasQueAplicanEnFecha(reservas, diaInfo.fechaISO, modId);
+        for (const c of cf) slots += horaASlotIndex(c.horaFin) - horaASlotIndex(c.horaInicio);
+        for (const r of rf) slots += horaASlotIndex(r.horaFin) - horaASlotIndex(r.horaInicio);
+      }
+      map[diaInfo.fechaISO] = formatTotalHoras(slots);
+    }
+    return map;
+  }, [clases, reservas, diasDelMes, lab, tieneModulos]);
 
-  const anchoSlot = `minmax(42px, 1fr)`;
+  const alturaFila = tieneModulos ? ALTURA_FILA_MODULO : ALTURA_FILA_NORMAL;
+  const anchoSlot = 'minmax(46px, 1fr)';
 
-  const gridColumns = `
-    ${ANCHO_LABEL_DIA}px
-    ${tieneModulos ? `${ANCHO_LABEL_MODULO}px` : ''}
-    repeat(${TOTAL_SLOTS}, ${anchoSlot})
-    ${ANCHO_CIERRE}px
-  `;
+  const gridColumns = [
+    `${ANCHO_FECHA}px`,
+    `${ANCHO_DIA}px`,
+    tieneModulos ? `${ANCHO_MODULO}px` : null,
+    `repeat(${TOTAL_SLOTS}, ${anchoSlot})`,
+    `${ANCHO_TOTAL}px`,
+  ].filter(Boolean).join(' ');
+
+  const colSlotsStart = tieneModulos ? 4 : 3;
+  const colTotal = colSlotsStart + TOTAL_SLOTS;
 
   function calcularSlotDesdeX(rowKey, clientX) {
     const area = rowAreaRefs.current[rowKey];
-
     if (!area) return null;
-
     const rect = area.getBoundingClientRect();
-
     const x = clientX - rect.left;
-
     if (x < 0 || x > rect.width) return null;
-
-    const slot = Math.floor((x / rect.width) * TOTAL_SLOTS);
-
-    return Math.max(0, Math.min(TOTAL_SLOTS - 1, slot));
+    return Math.max(0, Math.min(TOTAL_SLOTS - 1, Math.floor((x / rect.width) * TOTAL_SLOTS)));
   }
 
   const handleMouseDown = useCallback((e, fila) => {
     if (e.button !== 0) return;
     if (e.target.closest('button')) return;
-
-    const rowKey =
-      fila.tipo === 'modulo'
-        ? `${fila.diaInfo.fechaISO}_${fila.modulo.id}`
-        : fila.diaInfo.fechaISO;
-
+    const rowKey = fila.tipo === 'modulo'
+      ? `${fila.diaInfo.fechaISO}_${fila.modulo.id}`
+      : fila.diaInfo.fechaISO;
     const slot = calcularSlotDesdeX(rowKey, e.clientX);
-
     if (slot === null) return;
-
-    setDragState({
-      rowKey,
-      fila,
-      slotInicio: slot,
-      slotFin: slot,
-    });
+    setDragState({ rowKey, fila, slotInicio: slot, slotFin: slot });
   }, []);
 
-  const handleMouseMove = useCallback(
-    (e) => {
-      if (!dragState) return;
-
-      const slot = calcularSlotDesdeX(
-        dragState.rowKey,
-        e.clientX
-      );
-
-      if (slot === null) return;
-
-      setDragState((s) => ({
-        ...s,
-        slotFin: slot,
-      }));
-    },
-    [dragState]
-  );
+  const handleMouseMove = useCallback((e) => {
+    if (!dragState) return;
+    const slot = calcularSlotDesdeX(dragState.rowKey, e.clientX);
+    if (slot === null) return;
+    setDragState(s => ({ ...s, slotFin: slot }));
+  }, [dragState]);
 
   const handleMouseUp = useCallback(() => {
     if (!dragState) return;
-
     const { fila, slotInicio, slotFin } = dragState;
-
     const sIni = Math.min(slotInicio, slotFin);
     const sFin = Math.max(slotInicio, slotFin) + 1;
-
-    const horaInicio = slotIndexAHora(sIni);
-    const horaFin = slotIndexAHora(sFin);
-
     onCrearClase?.({
       diaSugerido: fila.diaInfo.diaSemana.id,
       fechaSugerida: fila.diaInfo.fechaISO,
-      moduloSugerido:
-        fila.tipo === 'modulo'
-          ? fila.modulo.id
-          : null,
-      horaInicio,
-      horaFin,
+      moduloSugerido: fila.tipo === 'modulo' ? fila.modulo.id : null,
+      horaInicio: slotIndexAHora(sIni),
+      horaFin: slotIndexAHora(sFin),
     });
-
     setDragState(null);
   }, [dragState, onCrearClase]);
 
@@ -163,7 +149,7 @@ export default function MatrizGrid({
     if (dragState) setDragState(null);
   }, [dragState]);
 
-  const colSlotsStart = tieneModulos ? 3 : 2;
+  const minWidth = ANCHO_FECHA + ANCHO_DIA + (tieneModulos ? ANCHO_MODULO : 0) + TOTAL_SLOTS * 46 + ANCHO_TOTAL;
 
   return (
     <div
@@ -171,230 +157,151 @@ export default function MatrizGrid({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
     >
-      <div
-        style={{
-          minWidth: `${
-            ANCHO_LABEL_DIA +
-            (tieneModulos
-              ? ANCHO_LABEL_MODULO
-              : 0) +
-            TOTAL_SLOTS * 42 +
-            ANCHO_CIERRE
-          }px`,
-        }}
-      >
-        {/* HEADER */}
+      <div style={{ minWidth: `${minWidth}px` }}>
+
+        {/* ── HEADER ── */}
         <div
-          className="grid sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm"
-          style={{
-            gridTemplateColumns: gridColumns,
-          }}
+          className="grid sticky top-0 z-20 bg-white border-b-2 border-gray-300 shadow-sm"
+          style={{ gridTemplateColumns: gridColumns }}
         >
-          <div className="px-3 py-2 text-[10px] font-semibold uppercase text-gray-500 border-r border-gray-200">
-            Fecha
+          {/* FECHA */}
+          <div className="flex items-end justify-center pb-2 border-r border-gray-200 bg-gray-50 text-[10px] font-semibold uppercase text-gray-500">
+            FECHA
           </div>
 
+          {/* Días */}
+          <div className="flex items-end justify-center pb-2 border-r border-gray-200 bg-gray-50 text-[10px] font-semibold uppercase text-gray-500">
+            Días
+          </div>
+
+          {/* Módulo */}
           {tieneModulos && (
-            <div className="px-1 py-2 text-[10px] font-semibold uppercase text-center text-gray-500 border-r border-gray-200">
+            <div className="flex items-end justify-center pb-2 border-r border-gray-200 bg-gray-50 text-[10px] font-semibold uppercase text-gray-500">
               Mód
             </div>
           )}
 
+          {/* Franjas horarias — texto rotado */}
           {FRANJAS_HORARIAS.map((f, i) => {
-            const esHoraCompleta =
-              f.inicio.endsWith(':00');
-
+            const esHoraCompleta = f.inicio.endsWith(':00');
+            const esAlmuerzo = SLOTS_ALMUERZO.has(i);
             return (
               <div
                 key={f.inicio}
-                className={`
-                  py-2 text-center border-r border-gray-100
-                  ${
-                    esHoraCompleta
-                      ? 'text-[10px] font-semibold text-gray-700'
-                      : 'text-[9px] text-gray-400'
-                  }
-                `}
+                className={`flex items-end justify-center pb-1 overflow-hidden ${
+                  esHoraCompleta ? 'border-r border-gray-300' : 'border-r border-gray-100'
+                } ${esAlmuerzo ? 'bg-gray-200/70' : 'bg-gray-50'}`}
               >
-                {f.inicio}
+                <span
+                  className={`leading-none whitespace-nowrap ${
+                    esHoraCompleta ? 'text-[11px] font-semibold text-gray-700' : 'text-[10px] font-medium text-gray-500'
+                  }`}
+                  style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                >
+                  {f.label}
+                </span>
               </div>
             );
           })}
 
-          <div className="py-2 text-[10px] font-bold text-center text-gray-700 border-l border-gray-200 bg-gray-50">
-            {HORA_FIN_DIA}
+          {/* Total Horas Programadas */}
+          <div className="flex items-end justify-center pb-1 border-l-2 border-blue-200 bg-blue-50 overflow-hidden">
+            <span
+              className="text-[11px] font-semibold text-blue-700 leading-none whitespace-nowrap"
+              style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+            >
+              Total Horas Programadas
+            </span>
           </div>
         </div>
 
+        {/* ── FILAS ── */}
         {filas.map((fila) => {
           const { diaInfo } = fila;
+          const rowKey = fila.tipo === 'modulo'
+            ? `${diaInfo.fechaISO}_${fila.modulo.id}`
+            : diaInfo.fechaISO;
+          const moduloId = fila.tipo === 'modulo' ? fila.modulo.id : null;
 
-          const rowKey =
-            fila.tipo === 'modulo'
-              ? `${diaInfo.fechaISO}_${fila.modulo.id}`
-              : diaInfo.fechaISO;
+          const clasesFila = clasesQueAplicanEnFecha(clases, diaInfo.fechaISO, diaInfo.diaSemana.id, moduloId);
+          const reservasFila = reservasQueAplicanEnFecha(reservas, diaInfo.fechaISO, moduloId);
 
-          const moduloId =
-            fila.tipo === 'modulo'
-              ? fila.modulo.id
-              : null;
+          const dragActivo = dragState?.rowKey === rowKey;
+          const sIni = dragActivo ? Math.min(dragState.slotInicio, dragState.slotFin) : 0;
+          const sFin = dragActivo ? Math.max(dragState.slotInicio, dragState.slotFin) + 1 : 0;
 
-          const clasesFila =
-            clasesQueAplicanEnFecha(
-              clases,
-              diaInfo.fechaISO,
-              diaInfo.diaSemana.id,
-              moduloId
-            );
+          const filasDelDia = tieneModulos ? lab.modulos.length : 1;
+          const esUltimaFila = fila.tipo === 'normal' ||
+            fila.modulo.id === lab.modulos[lab.modulos.length - 1].id;
+          const esPrimeraFila = fila.tipo === 'normal' || fila.esPrimeraDelDia;
 
-          const reservasFila =
-            reservasQueAplicanEnFecha(
-              reservas,
-              diaInfo.fechaISO,
-              moduloId
-            );
-
-          const dragActivo =
-            dragState?.rowKey === rowKey;
-
-          const sIni = dragActivo
-            ? Math.min(
-                dragState.slotInicio,
-                dragState.slotFin
-              )
-            : 0;
-
-          const sFin = dragActivo
-            ? Math.max(
-                dragState.slotInicio,
-                dragState.slotFin
-              ) + 1
-            : 0;
-
-          const filasDelDia = tieneModulos
-            ? lab.modulos.length
-            : 1;
-
-          const esUltimaFila =
-            fila.tipo === 'normal' ||
-            fila.modulo.id ===
-              lab.modulos[
-                lab.modulos.length - 1
-              ].id;
-
-          const esHoy =
-            diaInfo.fechaISO === hoy;
-
-          const esFinde =
-            diaInfo.esFinDeSemana;
+          const esHoy = diaInfo.fechaISO === hoy;
+          const esFinde = diaInfo.esFinDeSemana;
 
           const fondoFila = esFinde
             ? 'bg-gray-50/70'
-            : diaInfo.numeroDia % 2 === 0
-            ? 'bg-white'
-            : 'bg-gray-50/30';
+            : diaInfo.numeroDia % 2 === 0 ? 'bg-white' : 'bg-gray-50/30';
 
           return (
             <div
               key={rowKey}
-              className={`
-                grid relative mb-[2px]
-                ${
-                  esUltimaFila
-                    ? 'border-b border-gray-200'
-                    : 'border-b border-gray-100'
-                }
-                ${fondoFila}
-              `}
-              style={{
-                gridTemplateColumns:
-                  gridColumns,
-                height: `${alturaFila}px`,
-              }}
+              className={`grid relative ${
+                esUltimaFila ? 'border-b border-gray-200' : 'border-b border-gray-100'
+              } ${fondoFila}`}
+              style={{ gridTemplateColumns: gridColumns, height: `${alturaFila}px` }}
             >
-              {/* LABEL DÍA */}
-              {(fila.tipo === 'normal' ||
-                fila.esPrimeraDelDia) && (
+              {/* FECHA — número del día */}
+              {esPrimeraFila && (
                 <div
-                  className={`
-                    px-3 border-r border-gray-200
-                    flex items-center gap-2
-                    ${
-                      esHoy
-                        ? 'bg-blue-50'
-                        : esFinde
-                        ? 'bg-gray-100/80'
-                        : 'bg-white/80'
-                    }
-                  `}
+                  className={`border-r border-gray-200 flex items-center justify-center ${
+                    esHoy ? 'bg-blue-50' : esFinde ? 'bg-gray-100/80' : 'bg-white/80'
+                  }`}
                   style={{
-                    gridRow: tieneModulos
-                      ? `span ${filasDelDia}`
-                      : 'span 1',
                     gridColumn: '1 / 2',
+                    gridRow: tieneModulos ? `span ${filasDelDia}` : 'span 1',
                   }}
                 >
-                  <span
-                    className={`
-                      text-base font-semibold tabular-nums
-                      ${
-                        esHoy
-                          ? 'text-blue-600'
-                          : 'text-gray-800'
-                      }
-                    `}
-                  >
+                  <span className={`text-sm font-bold tabular-nums ${esHoy ? 'text-blue-600' : 'text-gray-800'}`}>
                     {diaInfo.numeroDia}
                   </span>
+                </div>
+              )}
 
-                  <div className="flex flex-col leading-tight">
-                    <span
-                      className={`
-                        text-[11px]
-                        ${
-                          esHoy
-                            ? 'text-blue-600 font-medium'
-                            : 'text-gray-500'
-                        }
-                      `}
-                    >
-                      {diaInfo.diaSemana.corto}
-                    </span>
-
+              {/* DÍAS — nombre del día */}
+              {esPrimeraFila && (
+                <div
+                  className={`border-r border-gray-200 flex items-center pl-2 ${
+                    esHoy ? 'bg-blue-50' : esFinde ? 'bg-gray-100/80' : 'bg-white/80'
+                  }`}
+                  style={{
+                    gridColumn: '2 / 3',
+                    gridRow: tieneModulos ? `span ${filasDelDia}` : 'span 1',
+                  }}
+                >
+                  <div className="leading-tight">
+                    <p className={`text-[11px] font-medium capitalize ${esHoy ? 'text-blue-600' : 'text-gray-700'}`}>
+                      {diaInfo.diaSemana.label}
+                    </p>
                     {esHoy && (
-                      <span className="text-[9px] uppercase font-semibold text-blue-500">
-                        Hoy
-                      </span>
+                      <p className="text-[9px] uppercase font-semibold text-blue-500">Hoy</p>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* MODULO */}
+              {/* MÓDULO */}
               {tieneModulos && (
                 <div
-                  className="
-                    text-[10px]
-                    text-gray-500
-                    border-r border-gray-200
-                    flex items-center justify-center
-                    bg-white/60
-                    font-medium
-                  "
-                  style={{
-                    gridColumn: '2 / 3',
-                  }}
+                  className="text-[10px] text-gray-500 border-r border-gray-200 flex items-center justify-center bg-white/60 font-medium"
+                  style={{ gridColumn: '3 / 4' }}
                 >
                   {fila.modulo.corto}
                 </div>
               )}
 
-              {/* GRID */}
+              {/* ÁREA DE SLOTS */}
               <div
-                ref={(el) => {
-                  rowAreaRefs.current[rowKey] =
-                    el;
-                }}
+                ref={(el) => { rowAreaRefs.current[rowKey] = el; }}
                 className="relative cursor-crosshair"
                 style={{
                   gridColumn: `${colSlotsStart} / span ${TOTAL_SLOTS}`,
@@ -402,173 +309,93 @@ export default function MatrizGrid({
                   gridTemplateColumns: `repeat(${TOTAL_SLOTS}, ${anchoSlot})`,
                   height: '100%',
                 }}
-                onMouseDown={(e) =>
-                  handleMouseDown(e, fila)
-                }
+                onMouseDown={(e) => handleMouseDown(e, fila)}
                 onMouseMove={handleMouseMove}
               >
-                {/* BG CELLS */}
-                {FRANJAS_HORARIAS.map(
-                  (f, i) => {
-                    const esHoraCompleta =
-                      f.inicio.endsWith(':00');
-
-                    return (
-                      <div
-                        key={`bg-${rowKey}-${i}`}
-                        className={`
-                          transition-colors
-                          hover:bg-blue-50/50
-                          ${
-                            esHoraCompleta
-                              ? 'border-r border-gray-200'
-                              : 'border-r border-gray-100'
-                          }
-                        `}
-                        style={{
-                          gridColumn: `${
-                            i + 1
-                          } / span 1`,
-                          gridRow: '1 / 2',
-                        }}
-                      />
-                    );
-                  }
-                )}
-
-                {/* CLASES */}
-                {clasesFila.map((clase) => {
-                  const slotInicio =
-                    horaASlotIndex(
-                      clase.horaInicio
-                    );
-
-                  const slotFin =
-                    horaASlotIndex(
-                      clase.horaFin
-                    );
-
-                  const span = Math.max(
-                    1,
-                    slotFin - slotInicio
+                {/* Celdas de fondo */}
+                {FRANJAS_HORARIAS.map((f, i) => {
+                  const esHoraCompleta = f.inicio.endsWith(':00');
+                  const esAlmuerzo = SLOTS_ALMUERZO.has(i);
+                  return (
+                    <div
+                      key={`bg-${rowKey}-${i}`}
+                      className={`transition-colors hover:bg-blue-50/50 ${
+                        esHoraCompleta ? 'border-r border-gray-200' : 'border-r border-gray-100'
+                      } ${esAlmuerzo ? 'bg-gray-100/80' : ''}`}
+                      style={{ gridColumn: `${i + 1} / span 1`, gridRow: '1 / 2' }}
+                    />
                   );
+                })}
 
+                {/* Clases regulares */}
+                {clasesFila.map((clase) => {
+                  const slotInicio = horaASlotIndex(clase.horaInicio);
+                  const slotFin = horaASlotIndex(clase.horaFin);
+                  const span = Math.max(1, slotFin - slotInicio);
                   return (
                     <div
                       key={`cls-${clase.id}-${diaInfo.fechaISO}`}
-                      style={{
-                        gridColumn: `${
-                          slotInicio + 1
-                        } / span ${span}`,
-                        gridRow: '1 / 2',
-                      }}
+                      style={{ gridColumn: `${slotInicio + 1} / span ${span}`, gridRow: '1 / 2' }}
                       className="z-[2] h-full px-[2px] py-[3px]"
                     >
                       <BloqueClase
                         clase={clase}
-                        onClick={(e) => {
-                          e.stopPropagation();
-
-                          onEditarClase?.(
-                            clase
-                          );
-                        }}
-                        compacto={
-                          tieneModulos
-                        }
+                        onClick={(e) => { e.stopPropagation(); onEditarClase?.(clase); }}
+                        compacto={tieneModulos}
                         esReserva={false}
                       />
                     </div>
                   );
                 })}
 
-                {/* RESERVAS */}
-                {reservasFila.map(
-                  (reserva) => {
-                    const slotInicio =
-                      horaASlotIndex(
-                        reserva.horaInicio
-                      );
+                {/* Reservas aprobadas */}
+                {reservasFila.map((reserva) => {
+                  const slotInicio = horaASlotIndex(reserva.horaInicio);
+                  const slotFin = horaASlotIndex(reserva.horaFin);
+                  const span = Math.max(1, slotFin - slotInicio);
+                  return (
+                    <div
+                      key={`res-${reserva.id}-${diaInfo.fechaISO}`}
+                      style={{ gridColumn: `${slotInicio + 1} / span ${span}`, gridRow: '1 / 2' }}
+                      className="z-[3] h-full px-[2px] py-[3px]"
+                    >
+                      <BloqueClase
+                        clase={reserva}
+                        onClick={(e) => { e.stopPropagation(); onClickReserva?.(reserva); }}
+                        compacto={tieneModulos}
+                        esReserva={true}
+                      />
+                    </div>
+                  );
+                })}
 
-                    const slotFin =
-                      horaASlotIndex(
-                        reserva.horaFin
-                      );
-
-                    const span = Math.max(
-                      1,
-                      slotFin - slotInicio
-                    );
-
-                    return (
-                      <div
-                        key={`res-${reserva.id}-${diaInfo.fechaISO}`}
-                        style={{
-                          gridColumn: `${
-                            slotInicio + 1
-                          } / span ${span}`,
-                          gridRow: '1 / 2',
-                        }}
-                        className="z-[3] h-full px-[2px] py-[3px]"
-                      >
-                        <BloqueClase
-                          clase={reserva}
-                          onClick={(e) => {
-                            e.stopPropagation();
-
-                            onClickReserva?.(
-                              reserva
-                            );
-                          }}
-                          compacto={
-                            tieneModulos
-                          }
-                          esReserva={true}
-                        />
-                      </div>
-                    );
-                  }
-                )}
-
-                {/* DRAG */}
+                {/* Selección por drag */}
                 {dragActivo && (
                   <div
-                    className="
-                      bg-blue-400/20
-                      border border-blue-500
-                      rounded-lg
-                      z-[4]
-                      pointer-events-none
-                      flex items-center justify-center
-                      text-[10px]
-                      font-semibold
-                      text-blue-800
-                      backdrop-blur-sm
-                      m-[2px]
-                    "
-                    style={{
-                      gridColumn: `${
-                        sIni + 1
-                      } / span ${sFin - sIni}`,
-                      gridRow: '1 / 2',
-                    }}
+                    className="bg-blue-400/20 border border-blue-500 rounded-lg z-[4] pointer-events-none flex items-center justify-center text-[10px] font-semibold text-blue-800 backdrop-blur-sm m-[2px]"
+                    style={{ gridColumn: `${sIni + 1} / span ${sFin - sIni}`, gridRow: '1 / 2' }}
                   >
-                    {slotIndexAHora(sIni)} –{' '}
-                    {slotIndexAHora(sFin)}
+                    {slotIndexAHora(sIni)} – {slotIndexAHora(sFin)}
                   </div>
                 )}
               </div>
 
-              {/* CIERRE */}
-              <div
-                className="border-l border-gray-200 bg-gray-50/60"
-                style={{
-                  gridColumn: `${
-                    colSlotsStart +
-                    TOTAL_SLOTS
-                  } / span 1`,
-                }}
-              />
+              {/* TOTAL HORAS — solo en la primera fila del día */}
+              {esPrimeraFila && (
+                <div
+                  className="border-l-2 border-blue-200 bg-blue-50/40 flex items-center justify-center"
+                  style={{
+                    gridColumn: `${colTotal} / span 1`,
+                    gridRow: tieneModulos ? `span ${filasDelDia}` : 'span 1',
+                  }}
+                >
+                  {totalesPorFecha[diaInfo.fechaISO] && (
+                    <span className="text-[10px] font-semibold text-blue-700 tabular-nums">
+                      {totalesPorFecha[diaInfo.fechaISO]}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

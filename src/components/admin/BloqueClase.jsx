@@ -1,51 +1,171 @@
-import { Users, Clock, Bookmark, BookOpen } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { Users, Clock, Bookmark, BookOpen, GraduationCap, Hash } from 'lucide-react';
 import { colorPorCodigo } from '../../lib/constants';
 import { formatearHora } from '../../utils/dateHelpers';
 
+function TooltipCard({ clase, esReserva, pos }) {
+  const W = 256;
+  let left = pos.left + pos.width / 2 - W / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
+
+  // Mostrar arriba si hay espacio, abajo si no
+  const arriba = pos.top > 180;
+  const top = arriba ? pos.top - 6 : pos.top + pos.height + 6;
+
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        top,
+        left,
+        width: W,
+        zIndex: 9999,
+        pointerEvents: 'none',
+        transform: arriba ? 'translateY(-100%)' : 'none',
+      }}
+    >
+      {/* Flecha arriba (cuando tooltip aparece abajo) */}
+      {!arriba && (
+        <div className="flex justify-center -mb-1">
+          <div className="w-3 h-3 bg-gray-900 rotate-45 rounded-sm" />
+        </div>
+      )}
+
+      <div className="bg-gray-900 text-white rounded-xl shadow-2xl overflow-hidden">
+        {/* Franja de color */}
+        <div
+          className="h-1.5 w-full"
+          style={{ backgroundColor: clase.color || colorPorCodigo(clase.codigoAsignatura || clase.asignatura || 'X') }}
+        />
+
+        <div className="p-3 space-y-2">
+          {esReserva ? (
+            <>
+              <div className="flex items-center gap-1.5">
+                <Bookmark size={11} className="text-amber-400 shrink-0" />
+                <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wide">
+                  Reserva aprobada
+                </span>
+              </div>
+              <p className="font-semibold text-sm leading-snug">
+                {clase.asignatura || clase.motivo || 'Sin título'}
+              </p>
+              {clase.docenteNombre && (
+                <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
+                  <GraduationCap size={11} className="shrink-0" />
+                  {clase.docenteNombre}
+                </div>
+              )}
+              <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
+                <Clock size={11} className="shrink-0" />
+                {formatearHora(clase.horaInicio)} – {formatearHora(clase.horaFin)}
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <p className="font-semibold text-[13px] leading-snug">
+                  {clase.nombreAsignatura || clase.codigoAsignatura}
+                </p>
+                <div className="flex items-center gap-1 text-gray-400 text-[10px] mt-0.5">
+                  <Hash size={9} />
+                  <span>
+                    {clase.codigoAsignatura}{clase.seccion ? ` · Sección ${clase.seccion}` : ''}
+                  </span>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-700 pt-2 space-y-1.5">
+                {clase.docente && (
+                  <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
+                    <GraduationCap size={11} className="shrink-0" />
+                    {clase.docente}
+                  </div>
+                )}
+                <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
+                  <Clock size={11} className="shrink-0" />
+                  {formatearHora(clase.horaInicio)} – {formatearHora(clase.horaFin)}
+                </div>
+                {clase.inscritos > 0 && (
+                  <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
+                    <Users size={11} className="shrink-0" />
+                    {clase.inscritos} inscritos
+                  </div>
+                )}
+              </div>
+
+              {clase.observaciones && (
+                <p className="text-gray-400 text-[10px] italic border-t border-gray-700 pt-2">
+                  {clase.observaciones}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Flecha abajo (cuando tooltip aparece arriba) */}
+      {arriba && (
+        <div className="flex justify-center -mt-1">
+          <div className="w-3 h-3 bg-gray-900 rotate-45 rounded-sm" />
+        </div>
+      )}
+    </div>,
+    document.body
+  );
+}
+
 export default function BloqueClase({ clase, onClick, compacto = false, esReserva = false }) {
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+
   const codigo = clase.codigoAsignatura || clase.asignatura || clase.motivo || 'X';
-  const color = colorPorCodigo(codigo);
+  const color = clase.color || colorPorCodigo(codigo);
 
   const titulo = esReserva
     ? (clase.asignatura || clase.motivo || 'Reserva')
-    : `${clase.codigoAsignatura || ''}${clase.seccion ? `-${clase.seccion}` : ''}`;
+    : (clase.nombreAsignatura || clase.codigoAsignatura || '');
+
+  const subtitulo = !esReserva
+    ? `${clase.codigoAsignatura || ''}${clase.seccion ? `-${clase.seccion}` : ''}`
+    : null;
 
   const Icono = esReserva ? Bookmark : BookOpen;
 
-  const tooltip = esReserva
-    ? `[RESERVA APROBADA]\n${clase.asignatura || clase.motivo || ''}\n${clase.docenteNombre || ''}\n${formatearHora(clase.horaInicio)}-${formatearHora(clase.horaFin)}`
-    : `${clase.nombreAsignatura || ''}\n${clase.docente || ''}\n${formatearHora(clase.horaInicio)}-${formatearHora(clase.horaFin)}\n${clase.inscritos || 0} inscritos`;
+  function onEnter() {
+    if (!btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    setPos({ top: r.top, left: r.left, width: r.width, height: r.height });
+  }
 
   return (
-    <button
-      onClick={onClick}
-      className={`w-full h-full text-left rounded text-white px-2 py-1 hover:ring-2 hover:ring-white hover:ring-offset-1 transition-all overflow-hidden flex flex-col justify-center ${
-        esReserva ? 'border-2 border-dashed border-amber-300' : ''
-      }`}
-      style={{ backgroundColor: color }}
-      title={tooltip}
-    >
-      <div className="flex items-center gap-1 text-[10px] font-semibold leading-tight truncate">
-        <Icono size={10} className="flex-shrink-0" />
-        <span className="truncate">{titulo}</span>
-      </div>
-      {!compacto && (
-        <div className="flex items-center gap-2 text-[9px] opacity-90 leading-tight truncate mt-0.5">
-          {!esReserva && clase.inscritos > 0 && (
-            <span className="flex items-center gap-0.5">
-              <Users size={8} />
-              {clase.inscritos}
-            </span>
-          )}
-          {esReserva && clase.docenteNombre && (
-            <span className="truncate">{clase.docenteNombre.split(' ')[0]}</span>
-          )}
-          <span className="flex items-center gap-0.5">
-            <Clock size={8} />
-            {formatearHora(clase.horaInicio)}
-          </span>
+    <>
+      <button
+        ref={btnRef}
+        onClick={onClick}
+        onMouseEnter={onEnter}
+        onMouseLeave={() => setPos(null)}
+        className={`w-full h-full text-left rounded text-white px-2 py-1 hover:ring-2 hover:ring-white hover:ring-offset-1 transition-all overflow-hidden flex flex-col justify-center ${
+          esReserva ? 'border-2 border-dashed border-amber-300' : ''
+        }`}
+        style={{ backgroundColor: color }}
+      >
+        <div className="flex items-center gap-1 text-[11px] font-semibold leading-tight truncate">
+          <Icono size={10} className="flex-shrink-0" />
+          <span className="truncate">{titulo}</span>
         </div>
-      )}
-    </button>
+        {!compacto && (
+          <div className="flex items-center gap-2 text-[9px] opacity-80 leading-tight truncate mt-0.5">
+            {subtitulo && <span className="truncate">{subtitulo}</span>}
+            {esReserva && clase.docenteNombre && (
+              <span className="truncate">{clase.docenteNombre.split(' ')[0]}</span>
+            )}
+          </div>
+        )}
+      </button>
+
+      {pos && <TooltipCard clase={clase} esReserva={esReserva} pos={pos} />}
+    </>
   );
 }
