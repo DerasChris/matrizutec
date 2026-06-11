@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { registrarActividad } from '../../services/logService';
-import { X, AlertTriangle, Calendar, Repeat, Clock, Trash2, Save } from 'lucide-react';
+import { X, AlertTriangle, Calendar, Repeat, Clock, Trash2, Save, ArrowRightLeft, CheckCircle, Loader } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   DIAS_SEMANA,
@@ -13,7 +13,7 @@ import {
 } from '../../lib/constants';
 import { detectarColisiones } from '../../utils/matrizHelpers';
 import { horaToMinutos, formatearHora } from '../../utils/dateHelpers';
-import { crearClase, actualizarClase, desactivarClase, eliminarClase } from '../../services/clasesService';
+import { crearClase, actualizarClase, desactivarClase, eliminarClase, obtenerLaboratorios, obtenerClasesDelLab } from '../../services/clasesService';
 
 const ESTADO_VACIO = {
   tipo: TIPOS_CLASE.REGULAR,
@@ -46,6 +46,14 @@ export default function ClaseFormulario({
   const [form, setForm] = useState(ESTADO_VACIO);
   const [guardando, setGuardando] = useState(false);
   const [errores, setErrores] = useState({});
+
+  // Estado del modo "Mover a otro laboratorio"
+  const [moverMode, setMoverMode] = useState(false);
+  const [loadingLabs, setLoadingLabs] = useState(false);
+  const [laboratoriosDisponibles, setLaboratoriosDisponibles] = useState([]);
+  const [labDestino, setLabDestino] = useState(null); // { id, nombre }
+  const [conflictosMover, setConflictosMover] = useState(null); // null | 'checking' | []
+  const [moviendo, setMoviendo] = useState(false);
 
   useEffect(() => {
     if (!abierto) return;
@@ -182,6 +190,7 @@ export default function ClaseFormulario({
         fechaFin: form.tipo === TIPOS_CLASE.PUNTUAL ? form.fechaInicio : form.fechaFin,
         observaciones: form.observaciones.trim(),
         color: form.color || null,
+        pendienteRevision: false,
       };
 
       if (claseEditando) {
@@ -253,6 +262,65 @@ export default function ClaseFormulario({
     }
   }
 
+  async function abrirMoverMode() {
+    setMoverMode(true);
+    setLabDestino(null);
+    setConflictosMover(null);
+    setLoadingLabs(true);
+    try {
+      const labs = await obtenerLaboratorios();
+      setLaboratoriosDisponibles(labs.filter(l => l.id !== lab?.id));
+    } catch {
+      toast.error('Error al cargar laboratorios');
+    } finally {
+      setLoadingLabs(false);
+    }
+  }
+
+  async function verificarMover(destino) {
+    setLabDestino(destino);
+    setConflictosMover('checking');
+    try {
+      const clasesDestino = await obtenerClasesDelLab(destino.id, ciclo.id, true);
+      const conflicts = detectarColisiones(
+        {
+          labId: destino.id,
+          diasSemana: claseEditando.diasSemana,
+          horaInicio: claseEditando.horaInicio,
+          horaFin: claseEditando.horaFin,
+          modulos: [],
+        },
+        clasesDestino,
+        null
+      );
+      setConflictosMover(conflicts);
+    } catch {
+      toast.error('Error al verificar disponibilidad');
+      setConflictosMover(null);
+    }
+  }
+
+  async function confirmarMovimiento() {
+    if (!labDestino || !Array.isArray(conflictosMover) || conflictosMover.length > 0) return;
+    setMoviendo(true);
+    try {
+      await actualizarClase(claseEditando.id, { labId: labDestino.id, modulos: [] });
+      await registrarActividad({
+        tipo: 'clase_movida',
+        descripcion: `Clase movida: ${claseEditando.nombreAsignatura} (${claseEditando.codigoAsignatura}) de ${lab.nombre} → ${labDestino.nombre}`,
+        usuario: perfil,
+        entidad: { tipo: 'clase', id: claseEditando.id },
+      });
+      toast.success(`Clase movida a ${labDestino.nombre}`);
+      onGuardado?.();
+      onCerrar();
+    } catch {
+      toast.error('Error al mover la clase');
+    } finally {
+      setMoviendo(false);
+    }
+  }
+
   if (!abierto) return null;
 
   return (
@@ -271,6 +339,16 @@ export default function ClaseFormulario({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+          {/* Alerta de revisión pendiente (clase importada sin docente) */}
+          {claseEditando?.pendienteRevision && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-500" />
+              <p>
+                Esta clase fue importada <strong>sin docente asignado</strong>. Completa el campo Docente y guarda para marcarla como revisada.
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de clase</label>
             <div className="grid grid-cols-2 gap-2">
@@ -570,6 +648,69 @@ export default function ClaseFormulario({
             />
           </div>
 
+          {/* ── Panel "Mover de laboratorio" ── */}
+          {moverMode && claseEditando && (
+            <div className="border-2 border-utec-primary/30 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-utec-light border-b border-utec-primary/20">
+                <p className="text-sm font-semibold text-utec-primary flex items-center gap-1.5">
+                  <ArrowRightLeft size={15} /> Mover a otro laboratorio
+                </p>
+                <p className="text-xs text-gray-500">Actual: <strong>{lab?.nombre}</strong></p>
+              </div>
+
+              <div className="px-4 py-4 space-y-3">
+                {loadingLabs ? (
+                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                    <Loader size={12} className="animate-spin" /> Cargando laboratorios...
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {laboratoriosDisponibles.map(l => (
+                      <button
+                        key={l.id}
+                        type="button"
+                        onClick={() => verificarMover(l)}
+                        className={`py-2 px-3 rounded-lg border-2 text-xs font-medium transition-all text-left ${
+                          labDestino?.id === l.id
+                            ? 'border-utec-primary bg-utec-light text-utec-primary'
+                            : 'border-gray-200 hover:border-utec-primary bg-white text-gray-700'
+                        }`}
+                      >
+                        {l.nombre}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Resultado de verificación */}
+                {conflictosMover === 'checking' && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 py-1">
+                    <Loader size={12} className="animate-spin text-utec-primary" />
+                    Verificando disponibilidad en {labDestino?.nombre}...
+                  </div>
+                )}
+                {Array.isArray(conflictosMover) && conflictosMover.length === 0 && (
+                  <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5 text-sm text-green-700">
+                    <CheckCircle size={15} className="shrink-0" />
+                    Sin conflictos — <strong>{labDestino?.nombre}</strong> está disponible en ese horario
+                  </div>
+                )}
+                {Array.isArray(conflictosMover) && conflictosMover.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 space-y-1">
+                    <p className="text-sm font-semibold text-red-700 flex items-center gap-1.5">
+                      <AlertTriangle size={14} /> Conflicto — no se puede mover a {labDestino?.nombre}
+                    </p>
+                    {conflictosMover.map((c, i) => (
+                      <p key={i} className="text-xs text-red-600 pl-1">
+                        • <strong>{c.nombreAsignatura}</strong> Sec. {c.seccion} · {c.diasSemana?.join('-')} · {c.horaInicio}–{c.horaFin}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {colisiones.length > 0 && (
             <div className="bg-red-50 border border-red-300 rounded-lg p-3">
               <div className="flex items-start gap-2">
@@ -591,41 +732,76 @@ export default function ClaseFormulario({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-gray-200 bg-gray-50">
-          <div className="flex gap-2">
-            {claseEditando && (
-              <>
-                <button
-                  onClick={handleDesactivar}
-                  className="px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 rounded-lg flex items-center gap-1.5"
-                >
-                  Desactivar
-                </button>
-                <button
-                  onClick={handleEliminar}
-                  className="px-3 py-2 text-sm text-red-700 hover:bg-red-100 rounded-lg flex items-center gap-1.5"
-                >
-                  <Trash2 size={14} /> Eliminar
-                </button>
-              </>
-            )}
-          </div>
-          <div className="flex gap-2">
+        {moverMode ? (
+          /* Footer en modo mover */
+          <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-gray-200 bg-gray-50">
             <button
-              onClick={onCerrar}
+              type="button"
+              onClick={() => { setMoverMode(false); setLabDestino(null); setConflictosMover(null); }}
               className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
             >
-              Cancelar
+              Cancelar movimiento
             </button>
             <button
-              onClick={handleGuardar}
-              disabled={guardando}
-              className="px-4 py-2 text-sm bg-utec-primary text-white rounded-lg hover:bg-utec-dark disabled:opacity-50 flex items-center gap-1.5"
+              type="button"
+              onClick={confirmarMovimiento}
+              disabled={
+                !labDestino ||
+                conflictosMover === null ||
+                conflictosMover === 'checking' ||
+                (Array.isArray(conflictosMover) && conflictosMover.length > 0) ||
+                moviendo
+              }
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-utec-primary text-white rounded-lg hover:bg-utec-dark disabled:opacity-40"
             >
-              <Save size={14} /> {guardando ? 'Guardando...' : 'Guardar'}
+              <ArrowRightLeft size={14} />
+              {moviendo ? 'Moviendo...' : `Mover a ${labDestino?.nombre || '...'}`}
             </button>
           </div>
-        </div>
+        ) : (
+          /* Footer normal */
+          <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-gray-200 bg-gray-50">
+            <div className="flex gap-2">
+              {claseEditando && (
+                <>
+                  <button
+                    onClick={handleDesactivar}
+                    className="px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 rounded-lg flex items-center gap-1.5"
+                  >
+                    Desactivar
+                  </button>
+                  <button
+                    onClick={handleEliminar}
+                    className="px-3 py-2 text-sm text-red-700 hover:bg-red-100 rounded-lg flex items-center gap-1.5"
+                  >
+                    <Trash2 size={14} /> Eliminar
+                  </button>
+                  <button
+                    onClick={abrirMoverMode}
+                    className="px-3 py-2 text-sm text-utec-primary hover:bg-utec-light rounded-lg flex items-center gap-1.5"
+                  >
+                    <ArrowRightLeft size={14} /> Mover
+                  </button>
+                </>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={onCerrar}
+                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleGuardar}
+                disabled={guardando}
+                className="px-4 py-2 text-sm bg-utec-primary text-white rounded-lg hover:bg-utec-dark disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Save size={14} /> {guardando ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,33 +1,127 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight, Printer, CalendarDays, LayoutGrid } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { obtenerLaboratorios, obtenerCicloActivo } from '../../services/laboratoriosService';
-import { ROLES } from '../../lib/constants';
+import { ROLES, MESES, colorPorCodigo } from '../../lib/constants';
 import { obtenerClasesDelLabPorMes } from '../../services/clasesService';
 import { obtenerReservasAprobadasFuturas } from '../../services/reservasService';
-import { MESES } from '../../lib/constants';
 import { getMesActual, getAnioActual, isoToFecha } from '../../utils/dateHelpers';
 import MatrizGrid from '../../components/admin/MatrizGrid';
+import MatrizSemanal from '../../components/admin/MatrizSemanal';
 import ClaseFormulario from '../../components/admin/ClaseFormulario';
 import DetalleReservaModal from '../../components/admin/DetalleReservaModal';
 
+// ── Helpers de impresión ─────────────────────────────────────────────────────
+
+const DIAS_ORDEN  = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+const DIAS_LABEL  = { lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sábado', domingo: 'Domingo' };
+
+function generarHTMLImpresion(lab, ciclo, clases, reservas, mesLabel, anio) {
+  const clasesActivas = clases.filter(c => c.activo !== false && c.tipo !== 'puntual');
+
+  // Agrupar clases regulares por día
+  const porDia = {};
+  for (const dia of DIAS_ORDEN) {
+    const lista = clasesActivas
+      .filter(c => c.diasSemana?.includes(dia))
+      .sort((a, b) => a.horaInicio.localeCompare(b.horaInicio));
+    if (lista.length) porDia[dia] = lista;
+  }
+
+  const filasDias = Object.entries(porDia).map(([dia, lista]) => `
+    <tr>
+      <td class="dia">${DIAS_LABEL[dia]}</td>
+      <td>
+        ${lista.map(c => `
+          <div class="clase" style="border-left: 4px solid ${c.color || colorPorCodigo(c.codigoAsignatura)}">
+            <span class="hora">${c.horaInicio} – ${c.horaFin}</span>
+            <span class="nombre">${c.nombreAsignatura}</span>
+            <span class="meta">${c.codigoAsignatura} · Secc. ${c.seccion} · ${c.docente}</span>
+            ${c.inscritos ? `<span class="meta">${c.inscritos} inscritos</span>` : ''}
+          </div>
+        `).join('')}
+      </td>
+    </tr>
+  `).join('');
+
+  // Reservas del mes
+  const filasReservas = reservas.length === 0 ? '<p class="sin-datos">Sin reservas aprobadas este mes.</p>' :
+    reservas.map(r => `
+      <div class="clase" style="border-left: 4px solid #f59e0b">
+        <span class="hora">${r.ocurrencias?.[0] || ''} · ${r.horaInicio} – ${r.horaFin}</span>
+        <span class="nombre">${r.asignatura || r.motivo || 'Sin título'}</span>
+        <span class="meta">${r.docenteNombre || ''}</span>
+      </div>
+    `).join('');
+
+  const hoy = new Date().toLocaleDateString('es-SV', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>${lab.nombre} – ${mesLabel} ${anio}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #111; padding: 24px; }
+    header { border-bottom: 2px solid #185FA5; padding-bottom: 12px; margin-bottom: 16px; }
+    header h1 { font-size: 18px; color: #185FA5; }
+    header p  { font-size: 11px; color: #666; margin-top: 2px; }
+    h2 { font-size: 13px; color: #185FA5; margin: 20px 0 10px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; }
+    td { vertical-align: top; padding: 6px 8px; border-bottom: 1px solid #f3f4f6; }
+    td.dia { width: 90px; font-weight: 700; color: #374151; padding-top: 10px; white-space: nowrap; }
+    .clase { display: flex; flex-direction: column; gap: 1px; padding: 5px 8px; margin-bottom: 4px; background: #f9fafb; border-radius: 4px; }
+    .hora   { font-weight: 700; color: #374151; font-size: 10px; }
+    .nombre { font-weight: 600; font-size: 11px; color: #111; }
+    .meta   { font-size: 9px; color: #6b7280; }
+    .sin-datos { color: #9ca3af; font-style: italic; padding: 8px 0; }
+    footer { margin-top: 24px; font-size: 9px; color: #9ca3af; text-align: right; }
+    @media print {
+      body { padding: 12px; }
+      @page { margin: 10mm; size: A4 portrait; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>${lab.nombre}</h1>
+    <p>${ciclo?.nombre || ''} · ${mesLabel} ${anio}</p>
+    <p>Generado el ${hoy}</p>
+  </header>
+
+  <h2>Horario semanal recurrente</h2>
+  ${filasDias ? `<table>${filasDias}</table>` : '<p class="sin-datos">Sin clases regulares registradas.</p>'}
+
+  <h2>Reservas aprobadas — ${mesLabel} ${anio}</h2>
+  ${filasReservas}
+
+  <footer>UTEC FICA · Sistema de Gestión de Laboratorios</footer>
+  <script>window.onload = () => { window.print(); }<\/script>
+</body>
+</html>`;
+}
+
+// ── Componente principal ─────────────────────────────────────────────────────
+
 export default function MatrizLab() {
   const { perfil } = useAuth();
-  const [labs, setLabs] = useState([]);
-  const [ciclo, setCiclo] = useState(null);
+  const [labs, setLabs]     = useState([]);
+  const [ciclo, setCiclo]   = useState(null);
   const [labSel, setLabSel] = useState(null);
-  const [mes, setMes] = useState(getMesActual());
-  const [anio, setAnio] = useState(getAnioActual());
+  const [mes,  setMes]      = useState(getMesActual());
+  const [anio, setAnio]     = useState(getAnioActual());
   const [clases, setClases] = useState([]);
   const [todasLasReservas, setTodasLasReservas] = useState([]);
   const [cargandoInicial, setCargandoInicial] = useState(true);
-  const [cargandoClases, setCargandoClases] = useState(false);
+  const [cargandoClases,  setCargandoClases]  = useState(false);
 
-  const [formAbierto, setFormAbierto] = useState(false);
-  const [claseEditando, setClaseEditando] = useState(null);
-  const [sugerencia, setSugerencia] = useState(null);
+  const [vista, setVista] = useState('mensual'); // 'mensual' | 'semanal'
 
+  const [formAbierto,    setFormAbierto]    = useState(false);
+  const [claseEditando,  setClaseEditando]  = useState(null);
+  const [sugerencia,     setSugerencia]     = useState(null);
   const [reservaSeleccionada, setReservaSeleccionada] = useState(null);
 
   useEffect(() => { cargarBase(); }, []);
@@ -50,9 +144,7 @@ export default function MatrizLab() {
       setLabs(labsFiltrados);
       setCiclo(cicloData);
       if (labsFiltrados.length > 0) setLabSel(labsFiltrados[0]);
-      if (!cicloData) {
-        toast.error('No hay un ciclo activo. Crea uno desde el dashboard.');
-      }
+      if (!cicloData) toast.error('No hay un ciclo activo. Crea uno desde el dashboard.');
     } catch (e) {
       console.error(e);
       toast.error('Error al cargar laboratorios');
@@ -104,29 +196,26 @@ export default function MatrizLab() {
     setFormAbierto(true);
   }
 
-  function abrirReserva(reserva) {
-    setReservaSeleccionada(reserva);
-  }
-
   function mesAnterior() {
-    if (mes === 1) {
-      setMes(12);
-      setAnio(a => a - 1);
-    } else {
-      setMes(m => m - 1);
-    }
+    if (mes === 1) { setMes(12); setAnio(a => a - 1); }
+    else setMes(m => m - 1);
   }
 
   function mesSiguiente() {
-    if (mes === 12) {
-      setMes(1);
-      setAnio(a => a + 1);
-    } else {
-      setMes(m => m + 1);
-    }
+    if (mes === 12) { setMes(1); setAnio(a => a + 1); }
+    else setMes(m => m + 1);
   }
 
-  const mesLabel = MESES.find(m => m.num === mes)?.label || '';
+  function handleImprimir() {
+    if (!labSel) return;
+    const html = generarHTMLImpresion(labSel, ciclo, clases, reservasDelLabYMes, mesLabel, anio);
+    const win  = window.open('', '_blank', 'width=860,height=980');
+    if (!win) { toast.error('Permite popups para imprimir'); return; }
+    win.document.write(html);
+    win.document.close();
+  }
+
+  const mesLabel       = MESES.find(m => m.num === mes)?.label || '';
   const cantidadClases = clases.length;
   const cantidadReservas = reservasDelLabYMes.length;
 
@@ -154,8 +243,10 @@ export default function MatrizLab() {
         <p className="text-gray-600 text-sm mt-1">{ciclo.nombre}</p>
       </div>
 
+      {/* ── Barra de controles ── */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
         <div className="flex flex-wrap items-end gap-3">
+          {/* Selector de lab */}
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-medium text-gray-600 mb-1">Laboratorio</label>
             {perfil?.rol === ROLES.ENCARGADO ? (
@@ -181,43 +272,51 @@ export default function MatrizLab() {
                 className="input-base"
               >
                 {labs.map(l => (
-                  <option key={l.id} value={l.id}>
-                    {l.nombre}{l.tieneModulos ? ' (con módulos)' : ''}
-                  </option>
+                  <option key={l.id} value={l.id}>{l.nombre}{l.tieneModulos ? ' (con módulos)' : ''}</option>
                 ))}
               </select>
             )}
           </div>
 
-          <div className="flex items-end gap-1">
-            <button
-              onClick={mesAnterior}
-              className="px-2 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              title="Mes anterior"
-            >
-              <ChevronLeft size={16} />
-            </button>
-
-            <div className="min-w-[160px]">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Mes</label>
-              <select
-                value={mes}
-                onChange={e => setMes(parseInt(e.target.value))}
-                className="input-base"
-              >
-                {MESES.map(m => (
-                  <option key={m.num} value={m.num}>{m.label} {anio}</option>
-                ))}
-              </select>
+          {/* Navegación de mes (solo vista mensual) */}
+          {vista === 'mensual' && (
+            <div className="flex items-end gap-1">
+              <button onClick={mesAnterior} className="px-2 py-2 border border-gray-300 rounded-lg hover:bg-gray-50" title="Mes anterior">
+                <ChevronLeft size={16} />
+              </button>
+              <div className="min-w-[160px]">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Mes</label>
+                <select value={mes} onChange={e => setMes(parseInt(e.target.value))} className="input-base">
+                  {MESES.map(m => <option key={m.num} value={m.num}>{m.label} {anio}</option>)}
+                </select>
+              </div>
+              <button onClick={mesSiguiente} className="px-2 py-2 border border-gray-300 rounded-lg hover:bg-gray-50" title="Mes siguiente">
+                <ChevronRight size={16} />
+              </button>
             </div>
+          )}
 
-            <button
-              onClick={mesSiguiente}
-              className="px-2 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              title="Mes siguiente"
-            >
-              <ChevronRight size={16} />
-            </button>
+          {/* Toggle vista */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Vista</label>
+            <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+              <button
+                onClick={() => setVista('mensual')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  vista === 'mensual' ? 'bg-white text-utec-primary shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <LayoutGrid size={13} /> Mensual
+              </button>
+              <button
+                onClick={() => setVista('semanal')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  vista === 'semanal' ? 'bg-white text-utec-primary shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <CalendarDays size={13} /> Semanal
+              </button>
+            </div>
           </div>
 
           <button
@@ -229,36 +328,47 @@ export default function MatrizLab() {
             Actualizar
           </button>
 
+          {/* Botón imprimir — disponible para encargados o cuando hay lab seleccionado */}
+          {labSel && (
+            <button
+              onClick={handleImprimir}
+              className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 text-sm text-gray-700"
+              title="Imprimir horario del laboratorio"
+            >
+              <Printer size={14} />
+              Imprimir
+            </button>
+          )}
+
           <button
             onClick={() => abrirNueva()}
             className="px-4 py-2 bg-utec-primary text-white rounded-lg hover:bg-utec-dark flex items-center gap-1.5 text-sm font-medium"
           >
-            <Plus size={16} />
-            Nueva clase
+            <Plus size={16} /> Nueva clase
           </button>
         </div>
       </div>
 
+      {/* ── Info banner ── */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-start gap-2 text-sm">
         <Info size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
         <div className="text-blue-900">
           <p>
-            <strong>{labSel?.nombre} · {mesLabel} {anio}</strong> — Click y arrastra sobre celdas vacías para crear.
-            Click en clase regular para editar. Click en reserva (borde punteado) para ver detalle.
+            <strong>{labSel?.nombre}</strong>
+            {vista === 'mensual' ? ` · ${mesLabel} ${anio} — Click y arrastra sobre celdas vacías para crear. Click en clase para editar.` : ' · Vista semanal — Click en clase para editar.'}
           </p>
           <div className="flex gap-3 mt-1 text-xs">
             <span className="flex items-center gap-1">
-              <span className="inline-block w-3 h-3 bg-blue-700 rounded"></span>
-              Clase regular
+              <span className="inline-block w-3 h-3 bg-blue-700 rounded" /> Clase regular
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block w-3 h-3 bg-orange-700 border-2 border-dashed border-amber-300 rounded"></span>
-              Reserva aprobada
+              <span className="inline-block w-3 h-3 bg-amber-400 rounded" /> Reserva aprobada
             </span>
           </div>
         </div>
       </div>
 
+      {/* ── Contenido ── */}
       {labSel && (
         <>
           {cargandoClases ? (
@@ -266,7 +376,7 @@ export default function MatrizLab() {
               <Loader2 className="w-8 h-8 text-utec-primary animate-spin mx-auto mb-2" />
               <p className="text-gray-600 text-sm">Cargando datos...</p>
             </div>
-          ) : (
+          ) : vista === 'mensual' ? (
             <MatrizGrid
               lab={labSel}
               clases={clases}
@@ -275,14 +385,20 @@ export default function MatrizLab() {
               mes={mes}
               onCrearClase={abrirNueva}
               onEditarClase={abrirEditar}
-              onClickReserva={abrirReserva}
+              onClickReserva={r => setReservaSeleccionada(r)}
+            />
+          ) : (
+            <MatrizSemanal
+              clases={clases}
+              reservas={todasLasReservas.filter(r => r.labId === labSel.id)}
+              onClaseClick={abrirEditar}
             />
           )}
 
           <p className="text-center text-xs text-gray-500 mt-3">
             {cantidadClases === 0 && cantidadReservas === 0
-              ? `Sin actividad en ${labSel.nombre} para ${mesLabel}.`
-              : `${cantidadClases} clase${cantidadClases === 1 ? '' : 's'} regular${cantidadClases === 1 ? '' : 'es'} · ${cantidadReservas} reserva${cantidadReservas === 1 ? '' : 's'} aprobada${cantidadReservas === 1 ? '' : 's'} en ${mesLabel}`}
+              ? `Sin actividad en ${labSel.nombre}${vista === 'mensual' ? ` para ${mesLabel}` : ''}.`
+              : `${cantidadClases} clase${cantidadClases === 1 ? '' : 's'} · ${cantidadReservas} reserva${cantidadReservas === 1 ? '' : 's'} aprobada${cantidadReservas === 1 ? '' : 's'}${vista === 'mensual' ? ` en ${mesLabel}` : ''}`}
           </p>
         </>
       )}

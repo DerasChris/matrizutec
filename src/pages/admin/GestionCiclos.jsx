@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Download, Upload, Zap, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Download, Upload, Zap, BookOpen, ChevronDown, ChevronUp, History, RotateCcw, X, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import {
   obtenerTodosLosCiclos,
   activarCiclo,
   contarClasesPorCiclo,
 } from '../../services/ciclosService';
+import { obtenerHistorialCarga, restaurarSnapshot } from '../../services/clasesService';
 import { generarTemplateClases } from '../../utils/excelTemplate';
 import NuevoCicloModal from '../../components/admin/NuevoCicloModal';
 import ImportarClasesModal from '../../components/admin/ImportarClasesModal';
@@ -25,7 +26,15 @@ function formatearFecha(fechaISO) {
   return `${d} ${meses[Number(m) - 1]} ${y}`;
 }
 
-function CicloCard({ ciclo, conteo, cargandoConteo, onActivar, onImportar, onTemplate, esJefa }) {
+function fmtTimestamp(ts) {
+  if (!ts?.toDate) return '—';
+  return ts.toDate().toLocaleString('es-SV', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function CicloCard({ ciclo, conteo, cargandoConteo, onActivar, onImportar, onHistorial, onTemplate, esJefa }) {
   const tipoDef = TIPOS_CICLO_MAP[ciclo.numero] ?? {};
   const badgeClass = BADGE_TIPO[ciclo.numero] ?? 'bg-gray-100 text-gray-700';
 
@@ -33,12 +42,10 @@ function CicloCard({ ciclo, conteo, cargandoConteo, onActivar, onImportar, onTem
     <div className={`flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-xl border transition-colors ${
       ciclo.activo ? 'border-utec-primary bg-utec-light/30' : 'border-gray-200 bg-white'
     }`}>
-      {/* Badge tipo */}
       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${badgeClass} flex-shrink-0`}>
         {tipoDef.corto ?? `C0${ciclo.numero}`}
       </span>
 
-      {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <h3 className="font-semibold text-gray-900 text-sm">{ciclo.nombre}</h3>
@@ -61,31 +68,34 @@ function CicloCard({ ciclo, conteo, cargandoConteo, onActivar, onImportar, onTem
         </p>
       </div>
 
-      {/* Acciones */}
       <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
         {!ciclo.activo && esJefa && (
           <button
             onClick={() => onActivar(ciclo)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-utec-primary border border-utec-primary rounded-lg hover:bg-utec-primary hover:text-white transition-colors"
           >
-            <Zap size={13} />
-            Activar
+            <Zap size={13} /> Activar
           </button>
         )}
+        <button
+          onClick={() => onHistorial(ciclo)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          title="Historial de versiones"
+        >
+          <History size={13} /> Historial
+        </button>
         <button
           onClick={() => onTemplate(ciclo)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           title="Descargar template Excel"
         >
-          <Download size={13} />
-          Template
+          <Download size={13} /> Template
         </button>
         <button
           onClick={() => onImportar(ciclo)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-utec-primary rounded-lg hover:bg-utec-dark transition-colors"
         >
-          <Upload size={13} />
-          Importar
+          <Upload size={13} /> Importar
         </button>
       </div>
     </div>
@@ -93,7 +103,7 @@ function CicloCard({ ciclo, conteo, cargandoConteo, onActivar, onImportar, onTem
 }
 
 export default function GestionCiclos() {
-  const { esJefa } = useAuth();
+  const { esJefa, perfil } = useAuth();
   const [ciclos, setCiclos] = useState([]);
   const [conteos, setConteos] = useState({});
   const [cargandoConteos, setCargandoConteos] = useState({});
@@ -102,6 +112,7 @@ export default function GestionCiclos() {
 
   const [showNuevo, setShowNuevo] = useState(false);
   const [cicloImportar, setCicloImportar] = useState(null);
+  const [cicloHistorial, setCicloHistorial] = useState(null);
 
   const cargarCiclos = useCallback(async () => {
     setCargando(true);
@@ -151,8 +162,14 @@ export default function GestionCiclos() {
   }
 
   function handleImportado(stats) {
-    setConteos(prev => ({ ...prev, [cicloImportar.id]: stats.importadas }));
+    setConteos(prev => ({ ...prev, [cicloImportar.id]: stats.actualizadas + stats.creadas }));
     setCicloImportar(null);
+  }
+
+  function handleRestorado(cicloId, totalRestauradas) {
+    setConteos(prev => ({ ...prev, [cicloId]: totalRestauradas }));
+    setCicloHistorial(null);
+    cargarCiclos();
   }
 
   const ciclosPorAnio = ciclos.reduce((acc, c) => {
@@ -180,27 +197,20 @@ export default function GestionCiclos() {
             onClick={() => setShowNuevo(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-utec-primary rounded-lg hover:bg-utec-dark"
           >
-            <Plus size={16} />
-            Nuevo ciclo
+            <Plus size={16} /> Nuevo ciclo
           </button>
         )}
       </div>
 
       {cargando ? (
         <div className="space-y-3">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />
-          ))}
+          {[1, 2, 3].map(i => <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />)}
         </div>
       ) : ciclos.length === 0 ? (
         <div className="text-center py-16 text-gray-500">
           <BookOpen size={40} className="mx-auto mb-3 text-gray-300" />
           <p className="font-medium">No hay ciclos registrados</p>
-          {esJefa() && (
-            <p className="text-sm mt-1">
-              Crea el primer ciclo con el botón <strong>Nuevo ciclo</strong>.
-            </p>
-          )}
+          {esJefa() && <p className="text-sm mt-1">Crea el primer ciclo con el botón <strong>Nuevo ciclo</strong>.</p>}
         </div>
       ) : (
         <div className="space-y-6">
@@ -229,6 +239,7 @@ export default function GestionCiclos() {
                         cargandoConteo={!!cargandoConteos[ciclo.id]}
                         onActivar={handleActivar}
                         onImportar={setCicloImportar}
+                        onHistorial={setCicloHistorial}
                         onTemplate={handleTemplate}
                         esJefa={esJefa()}
                       />
@@ -252,10 +263,141 @@ export default function GestionCiclos() {
         <ImportarClasesModal
           ciclo={cicloImportar}
           clasesExistentes={conteos[cicloImportar.id] ?? 0}
+          perfil={perfil}
           onClose={() => setCicloImportar(null)}
           onImportado={handleImportado}
         />
       )}
+
+      {cicloHistorial && (
+        <HistorialCargaModal
+          ciclo={cicloHistorial}
+          perfil={perfil}
+          onClose={() => setCicloHistorial(null)}
+          onRestorado={handleRestorado}
+        />
+      )}
+    </div>
+  );
+}
+
+function HistorialCargaModal({ ciclo, perfil, onClose, onRestorado }) {
+  const [versiones, setVersiones] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [restaurando, setRestaurando] = useState(null);
+
+  useEffect(() => {
+    cargar();
+  }, [ciclo.id]);
+
+  async function cargar() {
+    try {
+      setCargando(true);
+      const data = await obtenerHistorialCarga(ciclo.id, 10);
+      setVersiones(data);
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al cargar historial');
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  async function handleRestaurar(version) {
+    if (!window.confirm(
+      `¿Restaurar la versión del ${fmtTimestamp(version.creadoEn)}?\n\n` +
+      `Se guardarán las ${version.totalClases} clases de ese snapshot y se creará un respaldo del estado actual.`
+    )) return;
+
+    try {
+      setRestaurando(version.id);
+      const result = await restaurarSnapshot(version.id, ciclo.id, ciclo.nombre, perfil);
+      toast.success(`Versión restaurada: ${result.restauradas} clases`);
+      onRestorado(ciclo.id, result.restauradas);
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al restaurar: ' + e.message);
+      setRestaurando(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <History size={18} className="text-utec-primary" />
+              Historial de versiones
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">{ciclo.nombre}</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100"><X size={20} /></button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          {cargando ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 text-utec-primary animate-spin" />
+            </div>
+          ) : versiones.length === 0 ? (
+            <div className="text-center py-12">
+              <History size={36} className="mx-auto text-gray-300 mb-3" />
+              <p className="text-gray-500 text-sm font-medium">Sin versiones guardadas</p>
+              <p className="text-gray-400 text-xs mt-1">
+                Se crea un snapshot automáticamente antes de cada importación.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 mb-4">
+                Cada versión representa el estado de la carga antes de una importación.
+                Restaurar reemplaza las clases actuales y guarda un respaldo del estado presente.
+              </p>
+              {versiones.map((v, idx) => (
+                <div
+                  key={v.id}
+                  className="flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-gray-300 transition-colors"
+                >
+                  {/* Índice */}
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                    <span className="text-xs font-bold text-gray-500">{idx + 1}</span>
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800">
+                      {fmtTimestamp(v.creadoEn)}
+                    </p>
+                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                      <span className="text-xs text-gray-500">
+                        {v.totalClases} clase{v.totalClases !== 1 ? 's' : ''}
+                      </span>
+                      <span className="text-xs text-gray-400">·</span>
+                      <span className="text-xs text-gray-500">
+                        {v.usuario?.nombre || 'Sistema'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Acción */}
+                  <button
+                    onClick={() => handleRestaurar(v)}
+                    disabled={restaurando !== null}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+                  >
+                    {restaurando === v.id
+                      ? <Loader2 size={12} className="animate-spin" />
+                      : <RotateCcw size={12} />
+                    }
+                    Restaurar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

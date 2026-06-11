@@ -122,5 +122,11 @@ service cloud.firestore {
       allow create: if isAuth() && usuarioActivo();
       allow update, delete: if false;
     }
+
+    match /historialCarga/{snapId} {
+      allow read: if isAuth() && esAdmin();
+      allow create: if isAuth() && esAdmin() && usuarioActivo();
+      allow update, delete: if false;
+    }
   }
 }
