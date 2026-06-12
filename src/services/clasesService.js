@@ -83,6 +83,14 @@ export async function obtenerClasesDelLab(labId, cicloId, soloActivas = true) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+export async function obtenerClasesDelCiclo(cicloId, soloActivas = false) {
+  const ref = collection(db, COLECCIONES.CLASES_REGULARES);
+  const constraints = [where('cicloId', '==', cicloId)];
+  if (soloActivas) constraints.push(where('activo', '==', true));
+  const snap = await getDocs(query(ref, ...constraints));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 export async function importarClases(cicloId, clases) {
   const colRef = collection(db, COLECCIONES.CLASES_REGULARES);
   const CHUNK = 499;

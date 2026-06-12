@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import SinPermiso from './pages/SinPermiso';
 import CuentaDesactivada from './pages/CuentaDesactivada';
 import MatrizLab from './pages/admin/MatrizLab';
+import GestionCarga from './pages/admin/GestionCarga';
 import GestionUsuarios from './pages/admin/GestionUsuarios';
 import GestionCiclos from './pages/admin/GestionCiclos';
 import SolicitudPublica from './pages/SolicitudPublica';
@@ -73,6 +74,12 @@ export default function App() {
             <Route path="/admin/ciclos" element={
               <ProtectedRoute rolesPermitidos={[ROLES.ENCARGADO, ROLES.JEFA]}>
                 <GestionCiclos />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/admin/carga" element={
+              <ProtectedRoute rolesPermitidos={[ROLES.ENCARGADO, ROLES.JEFA]}>
+                <GestionCarga />
               </ProtectedRoute>
             } />
 
