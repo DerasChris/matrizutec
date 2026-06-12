@@ -153,7 +153,8 @@ export default function MatrizGrid({
 
   return (
     <div
-      className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm select-none"
+      className="overflow-auto rounded-2xl border border-gray-200 bg-white shadow-sm select-none"
+      style={{ maxHeight: 'calc(100vh - 248px)' }}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
     >
