@@ -233,7 +233,22 @@ export default function SolicitudPublica() {
         }
       }
 
-      setRefId(docRef.id.slice(0, 8).toUpperCase());
+      // Confirmación al solicitante
+      const refIdCorto = docRef.id.slice(0, 8).toUpperCase();
+      try {
+        await addDoc(collection(db, COLECCIONES.MAIL_QUEUE), {
+          to: correo.trim(),
+          message: {
+            subject: `[LabTrack UTEC] Solicitud recibida — Ref. ${refIdCorto}`,
+            html: emailHtmlConfirmacion({ nombre: nombre.trim(), labNombre: labInfo?.nombre || labId, fecha, horaInicio, horaFin, refId: refIdCorto }),
+            text: `Hola ${nombre.trim()},\n\nTu solicitud para ${labInfo?.nombre || labId} el ${fecha} de ${horaInicio} a ${horaFin} fue recibida correctamente.\n\nNúmero de referencia: ${refIdCorto}\n\nJefatura de FICA revisará tu solicitud y te notificará por este correo.\n\n---\nLabTrack Horarios · UTEC FICA`,
+          },
+        });
+      } catch (mailErr) {
+        console.warn('Confirmación al solicitante no encolada:', mailErr.message);
+      }
+
+      setRefId(refIdCorto);
       setEnviado(true);
     } catch (err) {
       console.error(err);
@@ -622,6 +637,62 @@ function Campo({ label, error, hint, children }) {
 
 function inputCls(error) {
   return `input-base text-sm ${error ? 'border-red-400 focus:ring-red-400' : ''}`;
+}
+
+function emailHtmlConfirmacion({ nombre, labNombre, fecha, horaInicio, horaFin, refId }) {
+  const fmtF = (iso) => {
+    const [y, m, d] = iso.split('-');
+    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    return `${parseInt(d)} de ${meses[parseInt(m)-1]} de ${y}`;
+  };
+
+  return `
+<!DOCTYPE html>
+<html>
+<body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; background: #f0f4f8;">
+  <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background: #003366; color: white; padding: 24px;">
+      <p style="margin: 0; font-size: 12px; opacity: 0.8;">LabTrack UTEC FICA</p>
+      <h1 style="margin: 8px 0 0; font-size: 20px;">Solicitud recibida</h1>
+    </div>
+    <div style="padding: 24px;">
+      <p style="margin: 0 0 20px; color: #333; font-size: 14px;">
+        Hola <strong>${nombre}</strong>, tu solicitud fue recibida correctamente y está pendiente de revisión por jefatura de la FICA.
+      </p>
+
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <tr style="border-bottom: 1px solid #eee;">
+          <td style="padding: 10px 0; color: #888; width: 140px;">Laboratorio</td>
+          <td style="padding: 10px 0; font-weight: 600; color: #111;">${labNombre}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #eee;">
+          <td style="padding: 10px 0; color: #888;">Fecha</td>
+          <td style="padding: 10px 0; color: #111;">${fmtF(fecha)}</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px 0; color: #888;">Horario</td>
+          <td style="padding: 10px 0; font-weight: 600; color: #111;">${horaInicio} – ${horaFin}</td>
+        </tr>
+      </table>
+
+      <div style="margin: 24px 0; background: #f5f8ff; border-radius: 8px; padding: 16px; border-left: 4px solid #003366;">
+        <p style="margin: 0; font-size: 13px; color: #555;">
+          Número de referencia: <strong style="color: #003366; font-family: monospace;">${refId}</strong>
+        </p>
+        <p style="margin: 8px 0 0; font-size: 13px; color: #555;">
+          Te notificaremos a este correo cuando jefatura apruebe o rechace tu solicitud.
+        </p>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+      <p style="font-size: 11px; color: #aaa; margin: 0;">
+        Este mensaje fue generado automáticamente por LabTrack Horarios.<br>
+        Universidad Tecnológica de El Salvador · Facultad de Informática y Ciencias Aplicadas
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 function emailHtmlSolicitud({ nombre, correo, facultad, labNombre, fecha, horaInicio, horaFin, proposito, refId }) {
