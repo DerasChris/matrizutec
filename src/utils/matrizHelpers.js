@@ -88,9 +88,11 @@ export function generarDiasDelMes(anio, mes) {
   return dias;
 }
 
+const TIPOS_FECHA_EXACTA = new Set([TIPOS_CLASE.PUNTUAL, TIPOS_CLASE.REUNION, TIPOS_CLASE.DEFENSA]);
+
 export function clasesQueAplicanEnFecha(clases, fechaISO, diaSemanaId, moduloId = null) {
   return clases.filter(c => {
-    if (c.tipo === TIPOS_CLASE.PUNTUAL) {
+    if (TIPOS_FECHA_EXACTA.has(c.tipo)) {
       if (c.fechaInicio !== fechaISO) return false;
     } else {
       if (!Array.isArray(c.diasSemana) || !c.diasSemana.includes(diaSemanaId)) return false;

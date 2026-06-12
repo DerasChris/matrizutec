@@ -1,8 +1,11 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Users, Clock, Bookmark, BookOpen, GraduationCap, Hash } from 'lucide-react';
-import { colorPorCodigo } from '../../lib/constants';
+import { Users, Clock, Bookmark, BookOpen, GraduationCap, Hash, Award } from 'lucide-react';
+import { colorPorCodigo, TIPOS_CLASE, TIPOS_CLASE_LABEL } from '../../lib/constants';
 import { formatearHora } from '../../utils/dateHelpers';
+
+const COLOR_REUNION = '#7c3aed';
+const COLOR_DEFENSA = '#0d9488';
 
 function TooltipCard({ clase, esReserva, pos }) {
   const W = 256;
@@ -60,6 +63,47 @@ function TooltipCard({ clase, esReserva, pos }) {
               <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
                 <Clock size={11} className="shrink-0" />
                 {formatearHora(clase.horaInicio)} – {formatearHora(clase.horaFin)}
+              </div>
+            </>
+          ) : clase.tipo === TIPOS_CLASE.REUNION ? (
+            <>
+              <div className="flex items-center gap-1.5">
+                <Users size={11} className="text-violet-300 shrink-0" />
+                <span className="text-[10px] font-semibold text-violet-300 uppercase tracking-wide">Reunión</span>
+              </div>
+              <p className="font-semibold text-sm leading-snug mt-1">{clase.titulo || 'Reunión'}</p>
+              <div className="flex items-center gap-1.5 text-gray-300 text-[11px] mt-1">
+                <Clock size={11} className="shrink-0" />
+                {formatearHora(clase.horaInicio)} – {formatearHora(clase.horaFin)}
+              </div>
+              {clase.observaciones && (
+                <p className="text-gray-400 text-[10px] italic border-t border-gray-700 pt-2 mt-2">
+                  {clase.observaciones}
+                </p>
+              )}
+            </>
+          ) : clase.tipo === TIPOS_CLASE.DEFENSA ? (
+            <>
+              <div className="flex items-center gap-1.5">
+                <Award size={11} className="text-teal-300 shrink-0" />
+                <span className="text-[10px] font-semibold text-teal-300 uppercase tracking-wide">Defensa</span>
+              </div>
+              <p className="font-semibold text-sm leading-snug mt-1">{clase.titulo || 'Defensa'}</p>
+              <div className="border-t border-gray-700 pt-2 space-y-1 mt-2">
+                {clase.docente && (
+                  <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
+                    <GraduationCap size={11} className="shrink-0" /> {clase.docente}
+                  </div>
+                )}
+                <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
+                  <Clock size={11} className="shrink-0" />
+                  {formatearHora(clase.horaInicio)} – {formatearHora(clase.horaFin)}
+                </div>
+                {clase.inscritos > 0 && (
+                  <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
+                    <Users size={11} className="shrink-0" /> {clase.inscritos} participantes
+                  </div>
+                )}
               </div>
             </>
           ) : (
@@ -120,18 +164,29 @@ export default function BloqueClase({ clase, onClick, compacto = false, esReserv
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
 
+  const esReunion = clase.tipo === TIPOS_CLASE.REUNION;
+  const esDefensa = clase.tipo === TIPOS_CLASE.DEFENSA;
+
   const codigo = clase.codigoAsignatura || clase.asignatura || clase.motivo || 'X';
-  const color = clase.color || colorPorCodigo(codigo);
+  const color = esReunion
+    ? COLOR_REUNION
+    : esDefensa
+    ? COLOR_DEFENSA
+    : (clase.color || colorPorCodigo(codigo));
 
   const titulo = esReserva
     ? (clase.asignatura || clase.motivo || 'Reserva')
+    : esReunion || esDefensa
+    ? (clase.titulo || TIPOS_CLASE_LABEL?.[clase.tipo] || clase.tipo)
     : (clase.nombreAsignatura || clase.codigoAsignatura || '');
 
-  const subtitulo = !esReserva
+  const subtitulo = !esReserva && !esReunion && !esDefensa
     ? `${clase.codigoAsignatura || ''}${clase.seccion ? `-${clase.seccion}` : ''}`
+    : esDefensa && clase.docente
+    ? clase.docente.split(' ')[0]
     : null;
 
-  const Icono = esReserva ? Bookmark : BookOpen;
+  const Icono = esReserva ? Bookmark : esReunion ? Users : esDefensa ? Award : BookOpen;
 
   function onEnter() {
     if (!btnRef.current) return;

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight, Printer, CalendarDays, LayoutGrid } from 'lucide-react';
+import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight, Printer, CalendarDays, LayoutGrid, CalendarPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { obtenerLaboratorios, obtenerCicloActivo } from '../../services/laboratoriosService';
-import { ROLES, MESES, colorPorCodigo } from '../../lib/constants';
+import { ROLES, MESES, TIPOS_CLASE, colorPorCodigo } from '../../lib/constants';
 import { obtenerClasesDelLabPorMes } from '../../services/clasesService';
 import { obtenerReservasAprobadasFuturas } from '../../services/reservasService';
 import { getMesActual, getAnioActual, isoToFecha } from '../../utils/dateHelpers';
@@ -11,6 +11,7 @@ import MatrizGrid from '../../components/admin/MatrizGrid';
 import MatrizSemanal from '../../components/admin/MatrizSemanal';
 import ClaseFormulario from '../../components/admin/ClaseFormulario';
 import DetalleReservaModal from '../../components/admin/DetalleReservaModal';
+import EventoEspecialForm from '../../components/admin/EventoEspecialForm';
 
 // ── Helpers de impresión ─────────────────────────────────────────────────────
 
@@ -124,6 +125,9 @@ export default function MatrizLab() {
   const [sugerencia,     setSugerencia]     = useState(null);
   const [reservaSeleccionada, setReservaSeleccionada] = useState(null);
 
+  const [eventoFormAbierto,  setEventoFormAbierto]  = useState(false);
+  const [eventoEditando,     setEventoEditando]     = useState(null);
+
   useEffect(() => { cargarBase(); }, []);
   useEffect(() => { if (labSel && ciclo) cargar(); }, [labSel, ciclo, mes, anio]);
 
@@ -191,6 +195,11 @@ export default function MatrizLab() {
   }
 
   function abrirEditar(clase) {
+    if (clase.tipo === TIPOS_CLASE.REUNION || clase.tipo === TIPOS_CLASE.DEFENSA) {
+      setEventoEditando(clase);
+      setEventoFormAbierto(true);
+      return;
+    }
     setClaseEditando(clase);
     setSugerencia(null);
     setFormAbierto(true);
@@ -346,6 +355,13 @@ export default function MatrizLab() {
           >
             <Plus size={16} /> Nueva clase
           </button>
+
+          <button
+            onClick={() => { setEventoEditando(null); setEventoFormAbierto(true); }}
+            className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 flex items-center gap-1.5 text-sm font-medium"
+          >
+            <CalendarPlus size={16} /> Evento especial
+          </button>
         </div>
       </div>
 
@@ -418,6 +434,39 @@ export default function MatrizLab() {
         reserva={reservaSeleccionada}
         onCerrar={() => setReservaSeleccionada(null)}
       />
+
+      {/* ── Slide-out: Evento especial ── */}
+      {eventoFormAbierto && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={() => { setEventoFormAbierto(false); setEventoEditando(null); }}
+          />
+          <aside className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-base font-semibold text-gray-900">
+                {eventoEditando ? 'Editar evento especial' : 'Nuevo evento especial'}
+              </h2>
+              <button
+                onClick={() => { setEventoFormAbierto(false); setEventoEditando(null); }}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <EventoEspecialForm
+                labId={labSel?.id}
+                cicloId={ciclo?.id}
+                eventoEditando={eventoEditando}
+                labs={labs}
+                onGuardado={() => { setEventoFormAbierto(false); setEventoEditando(null); cargar(); }}
+                onCerrar={() => { setEventoFormAbierto(false); setEventoEditando(null); }}
+              />
+            </div>
+          </aside>
+        </>
+      )}
     </div>
   );
 }

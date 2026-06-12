@@ -59,11 +59,15 @@ export const TIPOS_NOTIFICACION = {
 export const TIPOS_CLASE = {
   REGULAR: 'regular',
   PUNTUAL: 'puntual',
+  REUNION: 'reunion',
+  DEFENSA: 'defensa',
 };
 
 export const TIPOS_CLASE_LABEL = {
   regular: 'Clase regular del ciclo',
   puntual: 'Práctica puntual (un solo día)',
+  reunion: 'Reunión',
+  defensa: 'Defensa de proyecto / tesis',
 };
 
 export const TIPOS_CICLO = [

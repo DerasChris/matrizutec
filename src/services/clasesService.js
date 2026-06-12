@@ -57,6 +57,19 @@ export async function obtenerClase(id) {
   return { id: snap.id, ...snap.data() };
 }
 
+export async function copiarEventoALab(evento, nuevoLabId) {
+  const colRef = collection(db, COLECCIONES.CLASES_REGULARES);
+  const { id: _id, ...datos } = evento;
+  const ts = serverTimestamp();
+  const docRef = await addDoc(colRef, {
+    ...datos,
+    labId: nuevoLabId,
+    creadoEn: ts,
+    actualizadoEn: ts,
+  });
+  return { id: docRef.id, ...datos, labId: nuevoLabId };
+}
+
 export async function obtenerLaboratorios() {
   const snap = await getDocs(
     query(collection(db, COLECCIONES.LABORATORIOS), orderBy('nombre'))
@@ -398,8 +411,9 @@ export async function restaurarSnapshot(snapshotId, cicloId, cicloNombre, usuari
 export async function obtenerClasesDelLabPorMes(labId, cicloId, anio, mes) {
   const todas = await obtenerClasesDelLab(labId, cicloId, true);
 
+  const TIPOS_POR_FECHA = new Set([TIPOS_CLASE.PUNTUAL, TIPOS_CLASE.REUNION, TIPOS_CLASE.DEFENSA]);
   return todas.filter(c => {
-    if (c.tipo === TIPOS_CLASE.PUNTUAL) {
+    if (TIPOS_POR_FECHA.has(c.tipo)) {
       if (!c.fechaInicio) return false;
       const [y, m] = c.fechaInicio.split('-').map(Number);
       return y === anio && m === mes;
