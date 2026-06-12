@@ -116,11 +116,11 @@ export default function EventoEspecialForm({
 
       if (eventoEditando) {
         await actualizarClase(eventoEditando.id, payload);
-        await registrarActividad('editar_evento', `Evento editado: ${titulo}`, perfil, { tipo, labId });
+        await registrarActividad({ tipo: 'editar_evento', descripcion: `Evento editado: ${titulo}`, usuario: perfil, entidad: { tipoEvento: tipo, labId } });
         toast.success('Evento actualizado');
       } else {
         await crearClase(payload);
-        await registrarActividad('crear_evento', `Evento creado: ${titulo}`, perfil, { tipo, labId });
+        await registrarActividad({ tipo: 'crear_evento', descripcion: `Evento creado: ${titulo}`, usuario: perfil, entidad: { tipoEvento: tipo, labId } });
         toast.success('Evento creado');
       }
       onGuardado?.();
@@ -138,7 +138,7 @@ export default function EventoEspecialForm({
     setEliminando(true);
     try {
       await eliminarClase(eventoEditando.id);
-      await registrarActividad('eliminar_evento', `Evento eliminado: ${eventoEditando.titulo}`, perfil, { tipo, labId });
+      await registrarActividad({ tipo: 'eliminar_evento', descripcion: `Evento eliminado: ${eventoEditando.titulo}`, usuario: perfil, entidad: { tipoEvento: tipo, labId } });
       toast.success('Evento eliminado');
       onGuardado?.();
     } catch {
@@ -153,7 +153,7 @@ export default function EventoEspecialForm({
     setCopiando(true);
     try {
       await copiarEventoALab(eventoEditando, labDestino.id);
-      await registrarActividad('copiar_evento', `Reunión copiada a ${labDestino.nombre}`, perfil, { labId: labDestino.id });
+      await registrarActividad({ tipo: 'copiar_evento', descripcion: `Reunión copiada a ${labDestino.nombre}`, usuario: perfil, entidad: { labId: labDestino.id } });
       toast.success(`Copiado a ${labDestino.nombre}`);
       setCopiadoEn(prev => [...prev, labDestino.id]);
       setLabDestino(null);
