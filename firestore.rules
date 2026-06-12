@@ -123,5 +123,13 @@ service cloud.firestore {
       allow create: if isAuth() && esAdmin() && usuarioActivo();
       allow update, delete: if false;
     }
+
+    // Alertas broadcast para admins (nueva reserva, nuevo usuario, etc.)
+    match /adminAlerts/{alertId} {
+      allow read: if isAuth() && esAdmin();
+      allow create: if isAuth();
+      allow update: if isAuth() && esAdmin();
+      allow delete: if esJefa();
+    }
   }
 }

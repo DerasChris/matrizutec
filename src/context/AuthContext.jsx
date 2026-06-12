@@ -10,6 +10,7 @@ import {
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, googleProvider, EMAIL_JEFA } from '../lib/firebase';
 import { COLECCIONES, ROLES } from '../lib/constants';
+import { crearAlertaAdmin } from '../services/notificacionesService';
 
 const AuthContext = createContext(null);
 
@@ -74,6 +75,16 @@ export function AuthProvider({ children }) {
     };
 
     await setDoc(ref, nuevoPerfil);
+
+    // Notificar a admins que hay un nuevo usuario sin laboratorio asignado
+    crearAlertaAdmin({
+      tipo: 'nuevo_usuario',
+      titulo: `Nuevo usuario registrado`,
+      mensaje: `${nuevoPerfil.nombre} (${nuevoPerfil.email}) se registró. Asígnale un laboratorio si corresponde.`,
+      refId: fbUser.uid,
+      refTipo: 'usuario',
+    });
+
     return { id: fbUser.uid, ...nuevoPerfil };
   }
 

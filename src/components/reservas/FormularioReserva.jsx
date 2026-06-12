@@ -15,7 +15,7 @@ import {
   obtenerReservasAprobadasFuturas,
   crearReserva,
 } from '../../services/reservasService';
-import { crearNotificacion } from '../../services/notificacionesService';
+import { crearNotificacion, crearAlertaAdmin } from '../../services/notificacionesService';
 import { TIPOS_NOTIFICACION } from '../../lib/constants';
 import PreviewOcurrencias from './PreviewOcurrencias';
 
@@ -208,11 +208,24 @@ export default function FormularioReserva({ labs, perfil, emailJefa, onCreado })
 
       const creada = await crearReserva(reserva);
 
-      if (emailJefa) {
-        try {
-          const tituloNotif = esTour
-            ? `Tour UTEC – ${reserva.colegio}`
-            : (reserva.asignatura || reserva.motivo);
+      try {
+        const tituloNotif = esTour
+          ? `Tour UTEC – ${reserva.colegio}`
+          : (reserva.asignatura || reserva.motivo);
+
+        // Alerta broadcast para todos los admins (tiempo real)
+        crearAlertaAdmin({
+          tipo: 'nueva_reserva',
+          titulo: `Nueva reserva: ${tituloNotif}`,
+          mensaje: esTour
+            ? `${perfil.nombre} solicitó ${reserva.labNombre} para Tour UTEC – ${reserva.colegio} (${reserva.horaInicio}–${reserva.horaFin}) el ${reserva.fechaInicio}.`
+            : `${perfil.nombre} solicitó ${reserva.labNombre} (${reserva.horaInicio}–${reserva.horaFin}) — ${ocurrencias.length} fecha(s). Motivo: ${reserva.motivo || reserva.asignatura}`,
+          refId: creada.id,
+          refTipo: 'reserva',
+        });
+
+        // Notificación personal a la jefa (con email)
+        if (emailJefa) {
           await crearNotificacion({
             destinatarioId: 'jefa',
             destinatarioEmail: emailJefa,
@@ -224,9 +237,9 @@ export default function FormularioReserva({ labs, perfil, emailJefa, onCreado })
             refId: creada.id,
             refTipo: 'reserva',
           });
-        } catch (e) {
-          console.warn('No se pudo notificar a la jefa:', e);
         }
+      } catch (e) {
+        console.warn('No se pudo notificar a la jefa:', e);
       }
 
       toast.success(esTour ? 'Tour registrado. Espera la aprobación.' : 'Reserva enviada. Espera la aprobación de jefatura.');

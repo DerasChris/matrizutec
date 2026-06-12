@@ -12,8 +12,58 @@ import {
   orderBy,
   limit,
   writeBatch,
+  arrayUnion,
 } from 'firebase/firestore';
 import { COLECCIONES, TIPOS_NOTIFICACION } from '../lib/constants';
+
+// ── Alertas broadcast para administradores ─────────────────────────────────
+
+const COL_ADMIN = 'adminAlerts';
+
+export async function crearAlertaAdmin({ tipo, titulo, mensaje, refId = null, refTipo = null }) {
+  try {
+    await addDoc(collection(db, COL_ADMIN), {
+      tipo,
+      titulo,
+      mensaje,
+      refId,
+      refTipo,
+      leidaPor: [],
+      creadaEn: serverTimestamp(),
+    });
+  } catch (e) {
+    console.warn('[adminAlert]', e.message);
+  }
+}
+
+export function suscribirseAAlertas(callback) {
+  const q = query(
+    collection(db, COL_ADMIN),
+    orderBy('creadaEn', 'desc'),
+    limit(30)
+  );
+  return onSnapshot(q, snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+}
+
+export async function marcarAlertaLeida(alertaId, uid) {
+  try {
+    await updateDoc(doc(db, COL_ADMIN, alertaId), { leidaPor: arrayUnion(uid) });
+  } catch (e) {
+    console.warn('[adminAlert] marcar leída:', e.message);
+  }
+}
+
+export async function marcarTodasAlertasLeidas(alertas, uid) {
+  const pendientes = alertas.filter(a => !a.leidaPor?.includes(uid));
+  if (!pendientes.length) return;
+  const batch = writeBatch(db);
+  pendientes.forEach(a =>
+    batch.update(doc(db, COL_ADMIN, a.id), { leidaPor: arrayUnion(uid) })
+  );
+  await batch.commit();
+}
 
 export async function crearNotificacion({
   destinatarioId,
