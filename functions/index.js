@@ -1,10 +1,20 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
 admin.initializeApp();
 
-const FROM_ADDRESS = 'LabTrack UTEC <onboarding@resend.dev>';
+const FROM_ADDRESS = 'LabTrack UTEC <labtrackutec@gmail.com>';
+
+function crearTransporte() {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
+    },
+  });
+}
 
 exports.procesarEmailQueue = functions.firestore
   .document('mail/{mailId}')
@@ -21,50 +31,38 @@ exports.procesarEmailQueue = functions.firestore
       return null;
     }
 
-    const apiKey = process.env.RESEND_API_KEY;
-
-    if (!apiKey) {
-      functions.logger.error('RESEND_API_KEY no encontrada en variables de entorno');
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+      functions.logger.error('GMAIL_USER o GMAIL_APP_PASSWORD no configurados');
       await snap.ref.update({
         'delivery.state': 'ERROR',
-        'delivery.error': 'RESEND_API_KEY no configurada en functions/.env',
+        'delivery.error': 'Credenciales Gmail no configuradas en functions/.env',
         'delivery.attempts': 1,
       });
       return null;
     }
 
-    const resend = new Resend(apiKey);
-
-    // Si OVERRIDE_TO_EMAIL está definido (modo sin dominio verificado),
-    // todos los emails van a ese correo con el destinatario real en el asunto.
-    const overrideTo = process.env.OVERRIDE_TO_EMAIL;
-    const realTo = Array.isArray(to) ? to.join(', ') : to;
-    const finalTo = overrideTo ? [overrideTo] : (Array.isArray(to) ? to : [to]);
-    const finalSubject = overrideTo
-      ? `[Para: ${realTo}] ${message.subject}`
-      : message.subject;
+    const finalTo = Array.isArray(to) ? to : [to];
 
     try {
-      const { data: resendData, error } = await resend.emails.send({
+      const transporte = crearTransporte();
+      const info = await transporte.sendMail({
         from: FROM_ADDRESS,
-        to: finalTo,
-        subject: finalSubject,
+        to: finalTo.join(', '),
+        subject: message.subject,
         ...(message.html && { html: message.html }),
         ...(message.text && { text: message.text }),
       });
 
-      if (error) throw new Error(error.message);
-
-      functions.logger.info(`Email enviado a ${to} — Resend ID: ${resendData?.id}`);
+      functions.logger.info(`Email enviado a ${finalTo.join(', ')} — ID: ${info.messageId}`);
 
       await snap.ref.update({
         'delivery.state': 'SUCCESS',
         'delivery.attempts': 1,
-        'delivery.messageId': resendData?.id ?? null,
+        'delivery.messageId': info.messageId ?? null,
         'delivery.endTime': new Date().toISOString(),
       });
     } catch (err) {
-      functions.logger.error('Error Resend:', err.message);
+      functions.logger.error('Error Gmail SMTP:', err.message);
       await snap.ref.update({
         'delivery.state': 'ERROR',
         'delivery.error': err.message,
