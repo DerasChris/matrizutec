@@ -1,8 +1,8 @@
 # Handoff de LabTrack Horarios
 
-Actualizado: 2026-06-25  
-Rama observada: `main`  
-Último commit observado: `f923915 feat: notificaciones en tiempo real para admins`
+Actualizado: 2026-06-25
+Rama observada: `codex/iis-onpremise`
+Rama productiva preservada: `main`
 
 ## Estado del repositorio
 
@@ -86,13 +86,13 @@ También conviene probar:
 
 ## Próximo paso recomendado
 
-Antes de añadir Superpowers:
+Probar el build paralelo IIS:
 
-1. Probar las alertas admin en tiempo real.
-2. Corregir cualquier problema encontrado.
-3. Actualizar este handoff.
-4. Definir qué partes de Superpowers se incorporarán: planificación, pruebas, revisión o handoff.
-5. Mantener commit/deploy bajo confirmación humana.
+1. Agregar `tecnologica.utec.edu.sv` a Authorized domains en Firebase Auth.
+2. Ejecutar `npm run build:onpremise`.
+3. Copiar `dist-onpremise/` a `C:\inetpub\wwwroot\tecnologica\laboratorios\`.
+4. Validar rutas directas, login y conexión con Firebase.
+5. Mantener Vercel/main como producción estable durante el piloto.
 
 ## Protocolo para continuar
 

@@ -2,6 +2,14 @@
 
 Este archivo registra decisiones de arquitectura y cambios que importan para futuras sesiones. No sustituye el historial de Git.
 
+## 2026-06-25 - Build paralelo para IIS
+
+- Se preparó la rama `codex/iis-onpremise`.
+- Vite genera `dist-onpremise/` con base `/laboratorios/`.
+- React Router usa el `BASE_URL` del build como `basename`.
+- Se añadió `web.config` para rutas SPA en IIS.
+- Vercel y Firebase se preservan como producción estable.
+
 ## 2026-06-25 - Documentación compartida Claude/Codex
 
 - Se añadió `AGENTS.md` como guía canónica para asistentes.
