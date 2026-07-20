@@ -93,6 +93,20 @@ Probar:
 
 Si IIS devuelve `500.19` al copiar `web.config`, probablemente falta el módulo **IIS URL Rewrite**. No eliminar reglas ni tocar el sitio principal: solicitar la instalación del módulo o configurar el rewrite a nivel del sitio con infraestructura.
 
+## Una ruta funciona al navegar, pero da 404 al refrescar
+
+React Router resuelve las rutas dentro del navegador. Un refresh en
+`/laboratorios/matriz` hace que IIS busque una carpeta o archivo físico llamado
+`matriz`. El `web.config` incluido en el build limpia las reglas heredadas de
+WordPress y reescribe toda ruta no física a:
+
+```text
+/laboratorios/index.html
+```
+
+Para corregirlo, reemplazar el `web.config` del servidor por el generado más
+recientemente y confirmar que **IIS URL Rewrite** esté instalado.
+
 ## Actualizaciones posteriores
 
 Cada actualización IIS:
