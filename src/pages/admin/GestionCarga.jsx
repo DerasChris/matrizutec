@@ -208,6 +208,7 @@ export default function GestionCarga() {
   }
 
   const labIdForm = claseEditando ? claseEditando.labId : labNueva;
+  const cicloSeleccionado = ciclos.find(c => c.id === cicloId) || null;
   const clasesActivas = clases.filter(c => c.activo !== false);
   const labsConClases = new Set(clasesActivas.map(c => c.labId)).size;
 
@@ -555,9 +556,11 @@ export default function GestionCarga() {
             </div>
             <div className="flex-1 overflow-y-auto">
               <ClaseFormulario
-                labId={labIdForm}
-                cicloId={cicloId}
+                abierto={formAbierto}
+                lab={labMap[labIdForm]}
+                ciclo={cicloSeleccionado}
                 claseEditando={claseEditando}
+                todasLasClases={clases}
                 onGuardado={onGuardado}
                 onCerrar={cerrarForm}
               />

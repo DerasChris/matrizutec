@@ -52,32 +52,47 @@ export default function MatrizGrid({
 
   const diasDelMes = useMemo(() => generarDiasDelMes(anio, mes), [anio, mes]);
 
+  // Clases importadas/creadas sin módulo asignado (p. ej. Lab 03 pendiente de
+  // revisión tras una importación). Sin esta fila extra quedan invisibles en
+  // la matriz, porque las demás filas solo iteran m1–m4.
+  const hayClasesSinModulo = tieneModulos && clases.some(
+    c => !Array.isArray(c.modulos) || c.modulos.length === 0
+  );
+
+  const modulosDelGrid = useMemo(() => {
+    if (!tieneModulos) return null;
+    return hayClasesSinModulo
+      ? [...lab.modulos, { id: null, corto: 'S/M' }]
+      : lab.modulos;
+  }, [tieneModulos, hayClasesSinModulo, lab]);
+
   const filas = useMemo(() => {
     const resultado = [];
     for (const diaInfo of diasDelMes) {
       if (tieneModulos) {
-        for (const modulo of lab.modulos) {
+        modulosDelGrid.forEach((modulo, idx) => {
           resultado.push({
             tipo: 'modulo',
             diaInfo,
             modulo,
-            esPrimeraDelDia: modulo.id === lab.modulos[0].id,
-            totalModulos: lab.modulos.length,
+            esPrimeraDelDia: idx === 0,
+            esUltimaDelDia: idx === modulosDelGrid.length - 1,
+            totalModulos: modulosDelGrid.length,
           });
-        }
+        });
       } else {
         resultado.push({ tipo: 'normal', diaInfo });
       }
     }
     return resultado;
-  }, [diasDelMes, lab, tieneModulos]);
+  }, [diasDelMes, tieneModulos, modulosDelGrid]);
 
   // Total horas programadas por fecha (sumando todos los módulos si aplica)
   const totalesPorFecha = useMemo(() => {
     const map = {};
     for (const diaInfo of diasDelMes) {
       let slots = 0;
-      const modulos = tieneModulos ? lab.modulos.map(m => m.id) : [null];
+      const modulos = tieneModulos ? [...lab.modulos.map(m => m.id), null] : [null];
       for (const modId of modulos) {
         const cf = clasesQueAplicanEnFecha(clases, diaInfo.fechaISO, diaInfo.diaSemana.id, modId);
         const rf = reservasQueAplicanEnFecha(reservas, diaInfo.fechaISO, modId);
@@ -231,9 +246,8 @@ export default function MatrizGrid({
           const sIni = dragActivo ? Math.min(dragState.slotInicio, dragState.slotFin) : 0;
           const sFin = dragActivo ? Math.max(dragState.slotInicio, dragState.slotFin) + 1 : 0;
 
-          const filasDelDia = tieneModulos ? lab.modulos.length : 1;
-          const esUltimaFila = fila.tipo === 'normal' ||
-            fila.modulo.id === lab.modulos[lab.modulos.length - 1].id;
+          const filasDelDia = fila.tipo === 'modulo' ? fila.totalModulos : 1;
+          const esUltimaFila = fila.tipo === 'normal' || fila.esUltimaDelDia;
           const esPrimeraFila = fila.tipo === 'normal' || fila.esPrimeraDelDia;
 
           const esHoy = diaInfo.fechaISO === hoy;
@@ -293,8 +307,11 @@ export default function MatrizGrid({
               {/* MÓDULO */}
               {tieneModulos && (
                 <div
-                  className="text-[10px] text-gray-500 border-r border-gray-200 flex items-center justify-center bg-white/60 font-medium"
+                  className={`text-[10px] border-r border-gray-200 flex items-center justify-center font-medium ${
+                    fila.modulo.id === null ? 'bg-amber-50 text-amber-700' : 'text-gray-500 bg-white/60'
+                  }`}
                   style={{ gridColumn: '3 / 4' }}
+                  title={fila.modulo.id === null ? 'Sin módulo asignado — pendiente de revisión' : undefined}
                 >
                   {fila.modulo.corto}
                 </div>
