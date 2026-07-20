@@ -91,6 +91,7 @@ export default function GestionCarga() {
   const [filtroDia,     setFiltroDia]     = useState('');
   const [filtroEstado,  setFiltroEstado]  = useState('activas');
   const [soloConflicto, setSoloConflicto] = useState(false);
+  const [soloPendientes, setSoloPendientes] = useState(false);
   const [formAbierto,   setFormAbierto]   = useState(false);
   const [claseEditando, setClaseEditando] = useState(null);
   const [labNueva,      setLabNueva]      = useState('');
@@ -141,6 +142,7 @@ export default function GestionCarga() {
     if (filtroLab)  r = r.filter(c => c.labId === filtroLab);
     if (filtroDia)  r = r.filter(c => (c.diasSemana || []).includes(filtroDia));
     if (soloConflicto) r = r.filter(c => conflictIds.has(c.id));
+    if (soloPendientes) r = r.filter(c => c.pendienteRevision && c.activo !== false);
     if (busqueda.trim()) {
       const q = busqueda.toLowerCase();
       r = r.filter(c =>
@@ -165,7 +167,7 @@ export default function GestionCarga() {
       return ordenDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
     });
     return r;
-  }, [clases, filtroEstado, filtroLab, filtroDia, busqueda, soloConflicto, ordenCol, ordenDir, labMap, conflictIds]);
+  }, [clases, filtroEstado, filtroLab, filtroDia, busqueda, soloConflicto, soloPendientes, ordenCol, ordenDir, labMap, conflictIds]);
 
   const conflictGroups = useMemo(() => {
     const byLab = {};
@@ -286,6 +288,7 @@ export default function GestionCarga() {
             value={pendientesCount}
             icon={Clock}
             color={pendientesCount > 0 ? 'amber' : 'green'}
+            onClick={pendientesCount > 0 ? () => { setTab('carga'); setSoloPendientes(true); } : undefined}
           />
         </div>
       </div>
@@ -359,6 +362,17 @@ export default function GestionCarga() {
                   className="rounded text-red-500 focus:ring-red-400"
                 />
                 Solo conflictos
+              </label>
+            )}
+            {pendientesCount > 0 && (
+              <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={soloPendientes}
+                  onChange={e => setSoloPendientes(e.target.checked)}
+                  className="rounded text-amber-500 focus:ring-amber-400"
+                />
+                Solo por revisar
               </label>
             )}
             <span className="text-xs text-gray-400 ml-auto">{clasesFiltradas.length} resultado{clasesFiltradas.length !== 1 ? 's' : ''}</span>

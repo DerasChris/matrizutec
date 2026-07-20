@@ -39,9 +39,13 @@ export default function MatrizGrid({
   onCrearClase,
   onEditarClase,
   onClickReserva,
+  modoLectura = false,
+  maxHeight = 'calc(100vh - 248px)',
 }) {
   const [dragState, setDragState] = useState(null);
+  const [panState, setPanState] = useState(null);
   const rowAreaRefs = useRef({});
+  const scrollRef = useRef(null);
 
   const tieneModulos =
     lab?.tieneModulos &&
@@ -130,22 +134,36 @@ export default function MatrizGrid({
   const handleMouseDown = useCallback((e, fila) => {
     if (e.button !== 0) return;
     if (e.target.closest('button')) return;
+    if (modoLectura) {
+      const el = scrollRef.current;
+      if (!el) return;
+      setPanState({ startX: e.clientX, startY: e.clientY, scrollLeft: el.scrollLeft, scrollTop: el.scrollTop });
+      return;
+    }
     const rowKey = fila.tipo === 'modulo'
       ? `${fila.diaInfo.fechaISO}_${fila.modulo.id}`
       : fila.diaInfo.fechaISO;
     const slot = calcularSlotDesdeX(rowKey, e.clientX);
     if (slot === null) return;
     setDragState({ rowKey, fila, slotInicio: slot, slotFin: slot });
-  }, []);
+  }, [modoLectura]);
 
   const handleMouseMove = useCallback((e) => {
+    if (panState) {
+      const el = scrollRef.current;
+      if (!el) return;
+      el.scrollLeft = panState.scrollLeft - (e.clientX - panState.startX);
+      el.scrollTop = panState.scrollTop - (e.clientY - panState.startY);
+      return;
+    }
     if (!dragState) return;
     const slot = calcularSlotDesdeX(dragState.rowKey, e.clientX);
     if (slot === null) return;
     setDragState(s => ({ ...s, slotFin: slot }));
-  }, [dragState]);
+  }, [dragState, panState]);
 
   const handleMouseUp = useCallback(() => {
+    if (panState) { setPanState(null); return; }
     if (!dragState) return;
     const { fila, slotInicio, slotFin } = dragState;
     const sIni = Math.min(slotInicio, slotFin);
@@ -158,18 +176,24 @@ export default function MatrizGrid({
       horaFin: slotIndexAHora(sFin),
     });
     setDragState(null);
-  }, [dragState, onCrearClase]);
+  }, [dragState, panState, onCrearClase]);
 
   const handleMouseLeave = useCallback(() => {
     if (dragState) setDragState(null);
-  }, [dragState]);
+    if (panState) setPanState(null);
+  }, [dragState, panState]);
 
   const minWidth = ANCHO_FECHA + ANCHO_DIA + (tieneModulos ? ANCHO_MODULO : 0) + TOTAL_SLOTS * 46 + ANCHO_TOTAL;
 
   return (
     <div
-      className="overflow-auto rounded-2xl border border-gray-200 bg-white shadow-sm select-none"
-      style={{ maxHeight: 'calc(100vh - 248px)' }}
+      ref={scrollRef}
+      className={`overflow-auto rounded-2xl border border-gray-200 bg-white shadow-sm select-none ${
+        modoLectura ? (panState ? 'cursor-grabbing' : 'cursor-grab') : ''
+      }`}
+      style={{ maxHeight }}
+      onMouseDown={modoLectura ? (e) => handleMouseDown(e, null) : undefined}
+      onMouseMove={modoLectura ? handleMouseMove : undefined}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
     >
@@ -320,15 +344,15 @@ export default function MatrizGrid({
               {/* ÁREA DE SLOTS */}
               <div
                 ref={(el) => { rowAreaRefs.current[rowKey] = el; }}
-                className="relative cursor-crosshair"
+                className={modoLectura ? 'relative' : 'relative cursor-crosshair'}
                 style={{
                   gridColumn: `${colSlotsStart} / span ${TOTAL_SLOTS}`,
                   display: 'grid',
                   gridTemplateColumns: `repeat(${TOTAL_SLOTS}, ${anchoSlot})`,
                   height: '100%',
                 }}
-                onMouseDown={(e) => handleMouseDown(e, fila)}
-                onMouseMove={handleMouseMove}
+                onMouseDown={modoLectura ? undefined : (e) => handleMouseDown(e, fila)}
+                onMouseMove={modoLectura ? undefined : handleMouseMove}
               >
                 {/* Celdas de fondo */}
                 {FRANJAS_HORARIAS.map((f, i) => {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight, Printer, CalendarDays, LayoutGrid, CalendarPlus } from 'lucide-react';
+import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight, Printer, CalendarDays, LayoutGrid, CalendarPlus, Maximize2, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { obtenerLaboratorios, obtenerCicloActivo } from '../../services/laboratoriosService';
 import { ROLES, MESES, TIPOS_CLASE, colorPorCodigo } from '../../lib/constants';
@@ -119,6 +119,7 @@ export default function MatrizLab() {
   const [cargandoClases,  setCargandoClases]  = useState(false);
 
   const [vista, setVista] = useState('mensual'); // 'mensual' | 'semanal'
+  const [modoConcentracion, setModoConcentracion] = useState(false);
 
   const [formAbierto,    setFormAbierto]    = useState(false);
   const [claseEditando,  setClaseEditando]  = useState(null);
@@ -130,6 +131,14 @@ export default function MatrizLab() {
 
   useEffect(() => { cargarBase(); }, []);
   useEffect(() => { if (labSel && ciclo) cargar(); }, [labSel, ciclo, mes, anio]);
+
+  // Salir del modo concentración con Escape
+  useEffect(() => {
+    if (!modoConcentracion) return;
+    function onKeyDown(e) { if (e.key === 'Escape') setModoConcentracion(false); }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [modoConcentracion]);
 
   async function cargarBase() {
     try {
@@ -337,6 +346,16 @@ export default function MatrizLab() {
             Actualizar
           </button>
 
+          <button
+            onClick={() => setModoConcentracion(true)}
+            disabled={!labSel}
+            className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 text-sm text-gray-700 disabled:opacity-40"
+            title="Pantalla completa — navega con el cursor (arrastrar para desplazar)"
+          >
+            <Maximize2 size={14} />
+            Modo concentración
+          </button>
+
           {/* Botón imprimir — disponible para encargados o cuando hay lab seleccionado */}
           {labSel && (
             <button
@@ -417,6 +436,87 @@ export default function MatrizLab() {
               : `${cantidadClases} clase${cantidadClases === 1 ? '' : 's'} · ${cantidadReservas} reserva${cantidadReservas === 1 ? '' : 's'} aprobada${cantidadReservas === 1 ? '' : 's'}${vista === 'mensual' ? ` en ${mesLabel}` : ''}`}
           </p>
         </>
+      )}
+
+      {/* ── Modo concentración: pantalla completa ── */}
+      {modoConcentracion && labSel && (
+        <div className="fixed inset-0 z-40 bg-white flex flex-col">
+          <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-200 shrink-0 flex-wrap">
+            <div className="flex items-center gap-4">
+              {vista === 'mensual' && (
+                <div className="flex items-center gap-1.5">
+                  <button onClick={mesAnterior} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50" title="Mes anterior">
+                    <ChevronLeft size={20} />
+                  </button>
+                  <button onClick={mesSiguiente} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50" title="Mes siguiente">
+                    <ChevronRight size={20} />
+                  </button>
+                </div>
+              )}
+              <div>
+                <h2 className="text-3xl md:text-4xl font-bold text-gray-900 leading-none capitalize">
+                  {vista === 'mensual' ? `${mesLabel} ${anio}` : 'Vista semanal'}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1.5">
+                  {labSel.nombre} · Arrastra para desplazarte, clic en una clase para editar
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                <button
+                  onClick={() => setVista('mensual')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    vista === 'mensual' ? 'bg-white text-utec-primary shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  <LayoutGrid size={13} /> Mensual
+                </button>
+                <button
+                  onClick={() => setVista('semanal')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    vista === 'semanal' ? 'bg-white text-utec-primary shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  <CalendarDays size={13} /> Semanal
+                </button>
+              </div>
+              <button
+                onClick={() => setModoConcentracion(false)}
+                className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600"
+                title="Salir del modo concentración (Esc)"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 px-6 py-4">
+            {vista === 'mensual' ? (
+              <MatrizGrid
+                lab={labSel}
+                clases={clases}
+                reservas={reservasDelLabYMes}
+                anio={anio}
+                mes={mes}
+                onCrearClase={abrirNueva}
+                onEditarClase={abrirEditar}
+                onClickReserva={r => setReservaSeleccionada(r)}
+                modoLectura
+                maxHeight="100%"
+              />
+            ) : (
+              <MatrizSemanal
+                clases={clases}
+                reservas={todasLasReservas.filter(r => r.labId === labSel.id)}
+                onClaseClick={abrirEditar}
+                modoLectura
+                maxHeight="100%"
+              />
+            )}
+          </div>
+        </div>
       )}
 
       <ClaseFormulario

@@ -1,6 +1,13 @@
-import { useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Moon } from 'lucide-react';
 import { colorPorCodigo } from '../../lib/constants';
+
+// A partir de esta hora una clase se considera de salida tardía (después del
+// cierre "normal" de 20:00, aunque el horario operativo llega hasta 20:30).
+const HORA_SALIDA_TARDIA = '20:00';
+function esSalidaTardia(horaFin) {
+  return typeof horaFin === 'string' && horaFin > HORA_SALIDA_TARDIA;
+}
 
 const INICIO_MIN = 6 * 60 + 30;  // 06:30
 const FIN_MIN    = 20 * 60 + 30; // 20:30 — hay secciones reales que cierran 18:40-20:10
@@ -61,8 +68,28 @@ const TICKS = Array.from({ length: SLOTS }, (_, i) => {
   };
 });
 
-export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick }) {
+export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick, modoLectura = false, maxHeight = null }) {
   const [lunes, setLunes] = useState(() => inicioSemana(new Date()));
+  const [panState, setPanState] = useState(null);
+  const scrollRef = useRef(null);
+
+  function handlePanDown(e) {
+    if (!modoLectura || e.button !== 0) return;
+    if (e.target.closest('[data-bloque]')) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    setPanState({ startX: e.clientX, startY: e.clientY, scrollLeft: el.scrollLeft, scrollTop: el.scrollTop });
+  }
+  function handlePanMove(e) {
+    if (!panState) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = panState.scrollLeft - (e.clientX - panState.startX);
+    el.scrollTop = panState.scrollTop - (e.clientY - panState.startY);
+  }
+  function handlePanUp() {
+    if (panState) setPanState(null);
+  }
 
   const hoyISO = toISO(new Date());
 
@@ -112,7 +139,15 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
       </div>
 
       {/* ── Grid ── */}
-      <div className="overflow-x-auto">
+      <div
+        ref={scrollRef}
+        className={modoLectura ? `overflow-auto ${panState ? 'cursor-grabbing' : 'cursor-grab'}` : 'overflow-x-auto'}
+        style={modoLectura && maxHeight ? { maxHeight } : undefined}
+        onMouseDown={handlePanDown}
+        onMouseMove={handlePanMove}
+        onMouseUp={handlePanUp}
+        onMouseLeave={handlePanUp}
+      >
         <div className="flex" style={{ minWidth: 560 }}>
 
           {/* Columna de horas */}
@@ -181,6 +216,7 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
                     return (
                       <div
                         key={clase.id + dia.key}
+                        data-bloque
                         onClick={() => onClaseClick?.(clase)}
                         style={{
                           position: 'absolute',
@@ -193,8 +229,11 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
                           cursor: onClaseClick ? 'pointer' : 'default',
                           overflow: 'hidden',
                         }}
-                        title={`${clase.nombreAsignatura}\n${clase.seccion} · ${clase.horaInicio}–${clase.horaFin}\n${clase.docente}`}
+                        title={`${clase.nombreAsignatura}\n${clase.seccion} · ${clase.horaInicio}–${clase.horaFin}${esSalidaTardia(clase.horaFin) ? ' (salida tardía)' : ''}\n${clase.docente}`}
                       >
+                        {esSalidaTardia(clase.horaFin) && (
+                          <Moon size={9} className="absolute top-0.5 right-0.5 text-amber-200 drop-shadow" />
+                        )}
                         <div className="px-1.5 py-1">
                           <p className="text-[10px] font-bold text-white leading-tight truncate">
                             {clase.nombreAsignatura}
