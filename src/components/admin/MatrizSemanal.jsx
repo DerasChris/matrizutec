@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { colorPorCodigo } from '../../lib/constants';
 
 const INICIO_MIN = 6 * 60 + 30;  // 06:30
-const FIN_MIN    = 20 * 60;       // 20:00
+const FIN_MIN    = 20 * 60 + 30; // 20:30 — hay secciones reales que cierran 18:40-20:10
 const SLOT_H     = 38;            // px por cada franja de 30 min
 const SLOTS      = (FIN_MIN - INICIO_MIN) / 30; // 27
 const TOTAL_H    = SLOTS * SLOT_H;              // 1026 px

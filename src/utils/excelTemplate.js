@@ -28,14 +28,14 @@ function construirHojaInstrucciones() {
 
   return [
     ['CAMPO', 'REQUERIDO', 'VALORES VÁLIDOS / FORMATO', 'NOTAS'],
-    ['Lab', 'Sí', 'lab_01, lab_02, ..., lab_14', 'Número de laboratorio en formato lab_NN'],
+    ['Lab', 'Sí', 'lab_01, lab_02, ..., lab_15', 'Número de laboratorio en formato lab_NN'],
     ['Codigo_Asignatura', 'Sí', 'Texto libre (máx. 30 caracteres)', 'Código oficial, ej: ICC-101'],
     ['Nombre_Asignatura', 'Sí', 'Texto libre', 'Nombre completo de la asignatura'],
     ['Seccion', 'Sí', 'Texto libre', 'Número o letra de sección, ej: 01, A'],
     ['Docente', 'Sí', 'Texto libre', 'Nombre completo del docente'],
     ['Dias_Semana', 'Sí', 'lunes | martes | miercoles | jueves | viernes | sabado', 'Separados por coma, ej: lunes,miercoles,viernes'],
     ['Hora_Inicio', 'Sí', 'HH:MM  (mínimo 06:30)', 'Formato 24h, ej: 07:00 — 13:30'],
-    ['Hora_Fin', 'Sí', 'HH:MM  (máximo 20:00)', 'Debe ser mayor que Hora_Inicio'],
+    ['Hora_Fin', 'Sí', 'HH:MM  (máximo 20:30)', 'Debe ser mayor que Hora_Inicio'],
     ['Modulos_Lab03', 'Solo si Lab = lab_03', 'm1 | m2 | m3 | m4', 'Separados por coma, ej: m1,m2'],
     ['Inscritos', 'No', 'Número entero', 'Estudiantes inscritos. Por defecto 0'],
     ['Tipo', 'No', 'regular  |  puntual', 'Por defecto: regular'],

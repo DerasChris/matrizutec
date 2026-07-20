@@ -1,5 +1,11 @@
-import { Clock, Users, User, BookOpen, CheckCircle2, Circle, Bookmark } from 'lucide-react';
+import { Clock, Users, User, BookOpen, CheckCircle2, Circle, Bookmark, Moon } from 'lucide-react';
 import { formatearHora } from '../../utils/dateHelpers';
+
+// A partir de esta hora una clase/reserva se considera de salida tardía.
+const HORA_SALIDA_TARDIA = '20:00';
+function esSalidaTardia(horaFin) {
+  return typeof horaFin === 'string' && horaFin > HORA_SALIDA_TARDIA;
+}
 
 export default function EstadoActual({ claseActiva, reservaActiva, horaActual, labNombre }) {
   const ocupado = claseActiva || reservaActiva;
@@ -112,6 +118,11 @@ export default function EstadoActual({ claseActiva, reservaActiva, horaActual, l
           <span className={`text-sm ${colores.textSecondary}`}>
             {formatearHora(item.horaInicio)} – {formatearHora(item.horaFin)}
           </span>
+          {esSalidaTardia(item.horaFin) && (
+            <span className={`inline-flex items-center gap-1 text-xs font-medium ${colores.textMuted}`}>
+              <Moon size={12} /> salida tardía
+            </span>
+          )}
         </div>
       </div>
     </div>
