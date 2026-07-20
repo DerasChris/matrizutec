@@ -18,43 +18,11 @@ import {
 import SelectorLab from '../components/dashboard/SelectorLab';
 import EstadoActual from '../components/dashboard/EstadoActual';
 import AgendaDelDia from '../components/dashboard/AgendaDelDia';
-import { sembrarLaboratorios, sembrarCicloActual } from '../utils/seedData';
-import { sembrarClasesDemo, eliminarClasesDemo } from '../utils/seedDemoData';
 import { ROLES } from '../lib/constants';
-import {
-  Loader2, RefreshCw, Database, AlertTriangle, FlaskConical,
-  Settings, ChevronDown, ChevronUp,
-} from 'lucide-react';
-
-const LAB_LAT = 13.701234;
-const LAB_LNG = -89.224567;
-const RADIO_METROS = 50;
-
-function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const rad = Math.PI / 180;
-  const dLat = (lat2 - lat1) * rad;
-  const dLon = (lon2 - lon1) * rad;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function verificarUbicacion() {
-  if (!navigator.geolocation) { alert('Este navegador no soporta geolocalización'); return; }
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const dist = calcularDistanciaMetros(pos.coords.latitude, pos.coords.longitude, LAB_LAT, LAB_LNG);
-      alert(dist <= RADIO_METROS ? 'Estás dentro del laboratorio.' : 'Estás fuera del área permitida.');
-    },
-    () => alert('No se pudo obtener la ubicación.'),
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-  );
-}
+import { Loader2, RefreshCw } from 'lucide-react';
 
 export default function Dashboard() {
-  const { perfil, esAdmin } = useAuth();
+  const { perfil } = useAuth();
   const ahora = useReloj();
 
   const [labs, setLabs] = useState([]);
@@ -64,7 +32,6 @@ export default function Dashboard() {
   const [reservas, setReservas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [cargandoLab, setCargandoLab] = useState(false);
-  const [setupAbierto, setSetupAbierto] = useState(false);
 
   useEffect(() => { cargarInicial(); }, []);
 
@@ -91,7 +58,8 @@ export default function Dashboard() {
       setLabs(labsFiltrados);
       setCiclo(cicloData);
       if (labsFiltrados.length > 0) setLabSeleccionado(labsFiltrados[0]);
-      if (labsFiltrados.length === 0 || !cicloData) setSetupAbierto(true);
+      if (labsFiltrados.length === 0) toast.error('No hay laboratorios configurados. Contacta al desarrollador.');
+      if (!cicloData) toast.error('No hay un ciclo activo. Contacta al desarrollador.');
     } catch (e) {
       console.error(e);
       toast.error('Error al cargar datos. Verifica las reglas de Firestore.');
@@ -124,40 +92,6 @@ export default function Dashboard() {
   const claseActiva = clases.find(c => estaEnRango(horaAhora, c.horaInicio, c.horaFin));
   const reservaActiva = reservas.find(r => estaEnRango(horaAhora, r.horaInicio, r.horaFin));
 
-  async function handleSembrarBase() {
-    try {
-      const t = toast.loading('Sembrando datos base...');
-      const [labsRes, cicloRes] = await Promise.all([sembrarLaboratorios(), sembrarCicloActual()]);
-      toast.dismiss(t);
-      const partes = [];
-      if (labsRes.creados) partes.push(`${labsRes.creados} labs creados`);
-      if (labsRes.actualizados) partes.push(`${labsRes.actualizados} labs actualizados`);
-      if (cicloRes.creado) partes.push('ciclo creado'); else partes.push('ciclo ya existía');
-      toast.success(partes.join(' · '));
-      await cargarInicial();
-    } catch (e) { toast.error('Error al sembrar datos base'); }
-  }
-
-  async function handleSembrarDemo() {
-    if (!ciclo) { toast.error('Primero debes crear el ciclo'); return; }
-    try {
-      const t = toast.loading('Sembrando clases demo...');
-      const res = await sembrarClasesDemo(ciclo.id);
-      toast.dismiss(t);
-      toast.success(`${res.creadas} clases demo creadas`);
-      if (labSeleccionado) cargarDatosLab(labSeleccionado.id);
-    } catch (e) { toast.error('Error al sembrar clases demo'); }
-  }
-
-  async function handleEliminarDemo() {
-    if (!confirm('¿Eliminar todas las clases marcadas como demo?')) return;
-    try {
-      const res = await eliminarClasesDemo();
-      toast.success(`${res.eliminadas} clases demo eliminadas`);
-      if (labSeleccionado) cargarDatosLab(labSeleccionado.id);
-    } catch (e) { toast.error('Error al eliminar clases demo'); }
-  }
-
   if (cargando) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
@@ -166,8 +100,6 @@ export default function Dashboard() {
       </div>
     );
   }
-
-  const necesitaSetup = labs.length === 0 || !ciclo;
 
   // Contenido del lab seleccionado (compartido entre mobile y desktop)
   const contenidoLab = labSeleccionado ? (
@@ -208,62 +140,12 @@ export default function Dashboard() {
             </h1>
             <p className="text-gray-600 text-sm mt-0.5 capitalize">{formatearFechaLarga(ahora)}</p>
           </div>
-          <div className="flex items-center gap-3">
-            {esAdmin() && (
-              <button
-                onClick={() => setSetupAbierto(!setupAbierto)}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
-              >
-                <Settings size={14} />
-                Setup
-                {setupAbierto ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-            )}
-            <div className="text-right">
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Hora actual</p>
-              <p className="text-2xl md:text-3xl font-bold text-utec-primary tabular-nums">{horaAhora}</p>
-            </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Hora actual</p>
+            <p className="text-2xl md:text-3xl font-bold text-utec-primary tabular-nums">{horaAhora}</p>
           </div>
         </div>
       </div>
-
-      {/* ─── Setup panel ─── */}
-      {esAdmin() && setupAbierto && (
-        <div className={`mb-6 border rounded-xl p-4 md:p-5 ${
-          necesitaSetup ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'
-        }`}>
-          <div className="flex items-start gap-3 mb-3">
-            {necesitaSetup
-              ? <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              : <Settings className="w-5 h-5 text-gray-600 flex-shrink-0 mt-0.5" />
-            }
-            <div className="flex-1">
-              <h2 className={`font-semibold text-sm ${necesitaSetup ? 'text-amber-900' : 'text-gray-900'}`}>
-                {necesitaSetup ? 'Configuración inicial requerida' : 'Setup avanzado'}
-              </h2>
-              <p className={`text-xs mt-1 ${necesitaSetup ? 'text-amber-800' : 'text-gray-600'}`}>
-                {necesitaSetup
-                  ? `${labs.length === 0 ? 'No hay laboratorios. ' : ''}${!ciclo ? 'No hay ciclo activo. ' : ''}Usa los botones para inicializar.`
-                  : 'Herramientas de mantenimiento.'}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 pl-8">
-            <button onClick={handleSembrarBase} className="flex items-center gap-2 px-3 py-2 bg-utec-primary text-white text-xs rounded-lg hover:bg-utec-dark">
-              <Database size={13} /> Sembrar labs + ciclo
-            </button>
-            <button onClick={handleSembrarDemo} disabled={!ciclo} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 disabled:opacity-50">
-              <FlaskConical size={13} /> Sembrar demo
-            </button>
-            <button onClick={handleEliminarDemo} className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700">
-              Eliminar demo
-            </button>
-            <button onClick={verificarUbicacion} className="flex items-center gap-2 px-3 py-2 bg-gray-700 text-white text-xs rounded-lg hover:bg-gray-800">
-              Validar ubicación
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ─── MOBILE: chip bar + contenido ─── */}
       <div className="lg:hidden space-y-4">
