@@ -38,9 +38,9 @@ const FORMATOS = [
   {
     id: 'utec-completo',
     label: 'UTEC — Reporte completo',
-    desc: 'Igual que el básico + CodEmp, Cupo, Disponible, Estado. Filtra automáticamente clases "Cerrado" y aulas virtuales.',
+    desc: 'Igual que el básico + CodEmp, Cupo, Disponible, Estado. "Cerrado" = cupos llenos, sí se importa; filtra aulas virtuales/en línea automáticamente.',
     icon: GraduationCap,
-    hint: 'Formato UTEC completo — filtra Estado=Cerrado, AULA VIRTUAL y EN LINEA automáticamente',
+    hint: 'Formato UTEC completo — filtra AULA VIRTUAL y EN LINEA automáticamente ("Cerrado" = cupo lleno, se importa igual)',
   },
 ];
 
@@ -99,7 +99,7 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
     const errores = [];
     let total = 0;
     let omitidas = 0;
-    const desglose = { cerradas: 0, virtuales: 0, aulasRegulares: 0 };
+    const desglose = { canceladas: 0, virtuales: 0, aulasRegulares: 0 };
 
     try {
       for (const file of files) {
@@ -109,7 +109,7 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
         errores.push(...res.errores.map(e => ({ ...e, archivo: file.name })));
         total += res.total;
         omitidas += res.omitidas || 0;
-        desglose.cerradas += res.desglose?.cerradas || 0;
+        desglose.canceladas += res.desglose?.canceladas || 0;
         desglose.virtuales += res.desglose?.virtuales || 0;
         desglose.aulasRegulares += res.desglose?.aulasRegulares || 0;
         porArchivo.push({ nombre: file.name, total: res.total, validas: res.validas.length, errores: res.errores.length });
@@ -299,7 +299,7 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
                 const partes = [];
                 if (resultado.desglose?.aulasRegulares > 0) partes.push(`${resultado.desglose.aulasRegulares} en aulas/talleres que no son laboratorio`);
                 if (resultado.desglose?.virtuales > 0) partes.push(`${resultado.desglose.virtuales} virtuales/en línea`);
-                if (resultado.desglose?.cerradas > 0) partes.push(`${resultado.desglose.cerradas} cerradas`);
+                if (resultado.desglose?.canceladas > 0) partes.push(`${resultado.desglose.canceladas} canceladas`);
                 return (
                   <div className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-600">
                     <span className="text-gray-400 mt-0.5 shrink-0">ⓘ</span>

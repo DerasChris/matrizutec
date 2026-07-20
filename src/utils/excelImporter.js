@@ -381,7 +381,7 @@ export function parsearExcelUTEC(buffer, cicloId) {
   const validas = [];
   const errores = [];
   let libresCount   = 0;
-  let cerradas      = 0;
+  let canceladas    = 0;
   let virtuales     = 0;
   let aulasRegulares = 0;
 
@@ -401,9 +401,13 @@ export function parsearExcelUTEC(buffer, cicloId) {
 
     if (!rawNombre) return;
 
-    // Filas cerradas / canceladas — omitir sin error
-    if (['cerrado', 'cerrada', 'cancelado', 'cancelada', 'inactivo'].includes(rawEstado)) {
-      cerradas++;
+    // Filas realmente canceladas — omitir sin error.
+    // OJO: "Cerrado" en el reporte UTEC significa cupos cerrados (sección
+    // llena, Disponible=0), NO clase cancelada — confirmado con datos
+    // reales donde el 100% de las filas "Cerrado" tienen cupo lleno.
+    // Esas SÍ deben importarse; solo se omiten cancelaciones reales.
+    if (['cancelado', 'cancelada', 'inactivo'].includes(rawEstado)) {
+      canceladas++;
       return;
     }
 
@@ -489,7 +493,7 @@ export function parsearExcelUTEC(buffer, cicloId) {
     validas,
     errores,
     total: noVacias.length,
-    omitidas: cerradas + virtuales + aulasRegulares,
-    desglose: { cerradas, virtuales, aulasRegulares },
+    omitidas: canceladas + virtuales + aulasRegulares,
+    desglose: { canceladas, virtuales, aulasRegulares },
   };
 }
