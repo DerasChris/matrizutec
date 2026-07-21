@@ -105,9 +105,18 @@ export default function ClaseFormulario({
       .reduce((sum, m) => sum + (m.equipos || 0), 0);
   }, [form.modulos, lab, tieneModulos]);
 
+  // Algunos errores de validación se muestran bajo una clave agrupada
+  // ("horario" para horaInicio/horaFin, "fechas" para fechaInicio/fechaFin)
+  // distinta al nombre del campo — hay que limpiar también esa clave o el
+  // mensaje queda pegado en pantalla aunque el campo ya esté correcto.
+  const GRUPOS_ERROR = { horaInicio: 'horario', horaFin: 'horario', fechaInicio: 'fechas', fechaFin: 'fechas' };
+
   function actualizar(campo, valor) {
     setForm(f => ({ ...f, [campo]: valor }));
-    setErrores(e => ({ ...e, [campo]: null }));
+    setErrores(e => {
+      const grupo = GRUPOS_ERROR[campo];
+      return grupo ? { ...e, [campo]: null, [grupo]: null } : { ...e, [campo]: null };
+    });
   }
 
   function toggleDia(diaId) {
@@ -117,6 +126,7 @@ export default function ClaseFormulario({
         ? f.diasSemana.filter(d => d !== diaId)
         : [...f.diasSemana, diaId],
     }));
+    setErrores(e => ({ ...e, diasSemana: null }));
   }
 
   function toggleModulo(moduloId) {
@@ -126,6 +136,7 @@ export default function ClaseFormulario({
         ? f.modulos.filter(m => m !== moduloId)
         : [...f.modulos, moduloId],
     }));
+    setErrores(e => ({ ...e, modulos: null }));
   }
 
   function todosLosModulos() {
@@ -134,6 +145,7 @@ export default function ClaseFormulario({
       ...f,
       modulos: f.modulos.length === lab.modulos.length ? [] : lab.modulos.map(m => m.id),
     }));
+    setErrores(e => ({ ...e, modulos: null }));
   }
 
   function validar() {
