@@ -3,10 +3,14 @@ import toast from 'react-hot-toast';
 import {
   Search, AlertTriangle, CheckCircle2, BookOpen, RefreshCw,
   Edit2, ChevronUp, ChevronDown, ChevronsUpDown, AlertCircle,
-  Clock, Plus, X, CalendarRange,
+  Clock, Plus, X, CalendarRange, Trash2,
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { obtenerTodosLosCiclos } from '../../services/ciclosService';
-import { obtenerClasesDelCiclo, obtenerLaboratorios, actualizarFechasRegulares } from '../../services/clasesService';
+import {
+  obtenerClasesDelCiclo, obtenerLaboratorios, actualizarFechasRegulares,
+  eliminarClasesRegularesDelCiclo,
+} from '../../services/clasesService';
 import ClaseFormulario from '../../components/admin/ClaseFormulario';
 import { DIAS_SEMANA, TIPOS_CLASE } from '../../lib/constants';
 
@@ -81,6 +85,7 @@ const COLS = [
 ];
 
 export default function GestionCarga() {
+  const { perfil } = useAuth();
   const [ciclos,        setCiclos]        = useState([]);
   const [cicloId,       setCicloId]       = useState('');
   const [clases,        setClases]        = useState([]);
@@ -103,6 +108,9 @@ export default function GestionCarga() {
   const [fechaInicioForm, setFechaInicioForm] = useState('');
   const [fechaFinForm,    setFechaFinForm]    = useState('');
   const [guardandoFechas, setGuardandoFechas] = useState(false);
+  const [vaciarModalAbierto, setVaciarModalAbierto] = useState(false);
+  const [vaciarConfirmText,  setVaciarConfirmText]  = useState('');
+  const [vaciando,           setVaciando]           = useState(false);
 
   useEffect(() => {
     Promise.all([obtenerTodosLosCiclos(), obtenerLaboratorios()]).then(([c, l]) => {
@@ -219,6 +227,7 @@ export default function GestionCarga() {
   const clasesActivas = clases.filter(c => c.activo !== false);
   const labsConClases = new Set(clasesActivas.map(c => c.labId)).size;
   const regularesActivasCount = clasesActivas.filter(c => c.tipo === TIPOS_CLASE.REGULAR).length;
+  const regularesTotalCount = clases.filter(c => c.tipo === TIPOS_CLASE.REGULAR).length;
 
   function abrirFechasModal() {
     setFechaInicioForm(cicloSeleccionado?.fechaInicio || '');
@@ -245,6 +254,25 @@ export default function GestionCarga() {
       toast.error('Error al estandarizar fechas');
     } finally {
       setGuardandoFechas(false);
+    }
+  }
+
+  async function confirmarVaciarCiclo() {
+    if (vaciarConfirmText.trim() !== (cicloSeleccionado?.nombre || '')) {
+      toast.error('El texto no coincide con el nombre del ciclo');
+      return;
+    }
+    setVaciando(true);
+    try {
+      const res = await eliminarClasesRegularesDelCiclo(cicloId, cicloSeleccionado?.nombre, perfil);
+      toast.success(`${res.eliminadas} clases regulares eliminadas. Se guardó un respaldo en el historial.`);
+      setVaciarModalAbierto(false);
+      setVaciarConfirmText('');
+      recargar();
+    } catch (e) {
+      toast.error('Error al eliminar las clases');
+    } finally {
+      setVaciando(false);
     }
   }
 
@@ -303,6 +331,15 @@ export default function GestionCarga() {
               title="Estandarizar fecha de inicio y fin de todas las clases regulares del ciclo"
             >
               <CalendarRange size={14} /> Estandarizar fechas
+            </button>
+
+            <button
+              onClick={() => { setVaciarConfirmText(''); setVaciarModalAbierto(true); }}
+              disabled={!cicloId || regularesTotalCount === 0}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-40"
+              title="Eliminar todas las clases regulares del ciclo para volver a importar desde cero"
+            >
+              <Trash2 size={14} /> Vaciar y reimportar
             </button>
 
             <button
@@ -685,6 +722,65 @@ export default function GestionCarga() {
               >
                 <CalendarRange size={14} />
                 {guardandoFechas ? 'Aplicando...' : `Aplicar a ${regularesActivasCount} clases`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: vaciar clases regulares del ciclo */}
+      {vaciarModalAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-sm font-semibold text-red-700 flex items-center gap-2">
+                <AlertTriangle size={16} /> Vaciar y reimportar
+              </h2>
+              <button
+                onClick={() => setVaciarModalAbierto(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm text-gray-700">
+                Esto elimina <strong>permanentemente</strong> las <strong>{regularesTotalCount}</strong> clases
+                tipo "regular" de <strong>{cicloSeleccionado?.nombre || 'este ciclo'}</strong> (activas e inactivas),
+                para que puedas volver a importar el Excel desde cero.
+              </p>
+              <p className="text-xs text-gray-500">
+                No toca reuniones, defensas ni prácticas puntuales — esas no vienen del Excel y no se recrean al
+                reimportar. Se guarda un respaldo automático en el historial de carga antes de borrar, por si necesitas
+                restaurar.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Escribe <strong>{cicloSeleccionado?.nombre}</strong> para confirmar
+                </label>
+                <input
+                  type="text"
+                  value={vaciarConfirmText}
+                  onChange={e => setVaciarConfirmText(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-400"
+                  placeholder={cicloSeleccionado?.nombre}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
+              <button
+                onClick={() => setVaciarModalAbierto(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarVaciarCiclo}
+                disabled={vaciando || vaciarConfirmText.trim() !== (cicloSeleccionado?.nombre || '')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-40"
+              >
+                <Trash2 size={14} />
+                {vaciando ? 'Eliminando...' : `Eliminar ${regularesTotalCount} clases`}
               </button>
             </div>
           </div>
