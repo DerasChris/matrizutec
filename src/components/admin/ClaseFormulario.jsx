@@ -161,13 +161,35 @@ export default function ClaseFormulario({
     return Object.keys(e).length === 0;
   }
 
+  // Cuando se fuerza el guardado sobre una colisión, la(s) clase(s) con las
+  // que choca quedan marcadas "por revisar" — no se les toca el módulo ni el
+  // horario, solo se deja constancia de que hay que revisarlas manualmente.
+  async function marcarColisionesParaRevision(cols, nombreNueva, seccionNueva) {
+    const nota = `⚠ Choca con "${nombreNueva}" Sec. ${seccionNueva} tras una reasignación manual — verificar módulo/horario.`;
+    for (const col of cols) {
+      const c = col.clase;
+      try {
+        await actualizarClase(c.id, {
+          pendienteRevision: true,
+          observaciones: c.observaciones ? `${c.observaciones}\n${nota}` : nota,
+        });
+      } catch (e) {
+        console.error('No se pudo marcar para revisión:', c.id, e);
+      }
+    }
+  }
+
   async function handleGuardar() {
     if (!validar()) {
       toast.error('Revisa los campos marcados');
       return;
     }
-    if (colisiones.length > 0) {
-      const ok = confirm(`Hay ${colisiones.length} colisión(es) con clases existentes. ¿Guardar de todos modos?`);
+    const colisionesAlGuardar = colisiones;
+    if (colisionesAlGuardar.length > 0) {
+      const ok = confirm(
+        `Hay ${colisionesAlGuardar.length} colisión(es) con clases existentes. ¿Guardar de todos modos?\n\n` +
+        `Las clases con las que choca quedarán marcadas "por revisar" para reasignarlas.`
+      );
       if (!ok) return;
     }
 
@@ -212,6 +234,12 @@ export default function ClaseFormulario({
         });
         toast.success('Clase creada');
       }
+
+      if (colisionesAlGuardar.length > 0) {
+        await marcarColisionesParaRevision(colisionesAlGuardar, payload.nombreAsignatura, payload.seccion);
+        toast(`${colisionesAlGuardar.length} clase(s) en conflicto marcada(s) para revisión`, { icon: '⚠️' });
+      }
+
       onGuardado?.();
       onCerrar();
     } catch (e) {

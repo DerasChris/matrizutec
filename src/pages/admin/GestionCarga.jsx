@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
+import toast from 'react-hot-toast';
 import {
   Search, AlertTriangle, CheckCircle2, BookOpen, RefreshCw,
   Edit2, ChevronUp, ChevronDown, ChevronsUpDown, AlertCircle,
-  Clock, Plus, X,
+  Clock, Plus, X, CalendarRange,
 } from 'lucide-react';
 import { obtenerTodosLosCiclos } from '../../services/ciclosService';
-import { obtenerClasesDelCiclo, obtenerLaboratorios } from '../../services/clasesService';
+import { obtenerClasesDelCiclo, obtenerLaboratorios, actualizarFechasRegulares } from '../../services/clasesService';
 import ClaseFormulario from '../../components/admin/ClaseFormulario';
-import { DIAS_SEMANA } from '../../lib/constants';
+import { DIAS_SEMANA, TIPOS_CLASE } from '../../lib/constants';
 
 const DIA_CORTO = {
   lunes: 'Lu', martes: 'Ma', miercoles: 'Mi',
@@ -98,6 +99,10 @@ export default function GestionCarga() {
   const [pickLab,       setPickLab]       = useState(false);
   const [ordenCol,      setOrdenCol]      = useState('labId');
   const [ordenDir,      setOrdenDir]      = useState('asc');
+  const [fechasModalAbierto, setFechasModalAbierto] = useState(false);
+  const [fechaInicioForm, setFechaInicioForm] = useState('');
+  const [fechaFinForm,    setFechaFinForm]    = useState('');
+  const [guardandoFechas, setGuardandoFechas] = useState(false);
 
   useEffect(() => {
     Promise.all([obtenerTodosLosCiclos(), obtenerLaboratorios()]).then(([c, l]) => {
@@ -213,6 +218,35 @@ export default function GestionCarga() {
   const cicloSeleccionado = ciclos.find(c => c.id === cicloId) || null;
   const clasesActivas = clases.filter(c => c.activo !== false);
   const labsConClases = new Set(clasesActivas.map(c => c.labId)).size;
+  const regularesActivasCount = clasesActivas.filter(c => c.tipo === TIPOS_CLASE.REGULAR).length;
+
+  function abrirFechasModal() {
+    setFechaInicioForm(cicloSeleccionado?.fechaInicio || '');
+    setFechaFinForm(cicloSeleccionado?.fechaFin || '');
+    setFechasModalAbierto(true);
+  }
+
+  async function confirmarEstandarizarFechas() {
+    if (!fechaInicioForm || !fechaFinForm) {
+      toast.error('Completa ambas fechas');
+      return;
+    }
+    if (fechaFinForm < fechaInicioForm) {
+      toast.error('La fecha fin debe ser posterior a la fecha inicio');
+      return;
+    }
+    setGuardandoFechas(true);
+    try {
+      const res = await actualizarFechasRegulares(cicloId, fechaInicioForm, fechaFinForm);
+      toast.success(`${res.actualizadas} clases regulares actualizadas`);
+      setFechasModalAbierto(false);
+      recargar();
+    } catch (e) {
+      toast.error('Error al estandarizar fechas');
+    } finally {
+      setGuardandoFechas(false);
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-full">
@@ -261,6 +295,15 @@ export default function GestionCarga() {
                 </div>
               )}
             </div>
+
+            <button
+              onClick={abrirFechasModal}
+              disabled={!cicloId}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 disabled:opacity-40"
+              title="Estandarizar fecha de inicio y fin de todas las clases regulares del ciclo"
+            >
+              <CalendarRange size={14} /> Estandarizar fechas
+            </button>
 
             <button
               onClick={recargar}
@@ -586,6 +629,66 @@ export default function GestionCarga() {
       {/* Overlay al hacer click fuera del picker de lab */}
       {pickLab && (
         <div className="fixed inset-0 z-10" onClick={() => setPickLab(false)} />
+      )}
+
+      {/* Modal: estandarizar fechas de clases regulares */}
+      {fechasModalAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-sm font-semibold text-gray-900">Estandarizar fechas</h2>
+              <button
+                onClick={() => setFechasModalAbierto(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-gray-500">
+                Aplica la misma fecha de inicio y fin a las <strong>{regularesActivasCount}</strong> clases
+                regulares activas de <strong>{cicloSeleccionado?.nombre || 'este ciclo'}</strong>. No afecta
+                clases puntuales, reuniones ni defensas.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Fecha inicio</label>
+                  <input
+                    type="date"
+                    value={fechaInicioForm}
+                    onChange={e => setFechaInicioForm(e.target.value)}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-utec-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Fecha fin</label>
+                  <input
+                    type="date"
+                    value={fechaFinForm}
+                    onChange={e => setFechaFinForm(e.target.value)}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-utec-primary"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
+              <button
+                onClick={() => setFechasModalAbierto(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEstandarizarFechas}
+                disabled={guardandoFechas}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-utec-primary rounded-lg hover:bg-utec-dark disabled:opacity-50"
+              >
+                <CalendarRange size={14} />
+                {guardandoFechas ? 'Aplicando...' : `Aplicar a ${regularesActivasCount} clases`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

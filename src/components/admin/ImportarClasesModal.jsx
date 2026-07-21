@@ -1,7 +1,7 @@
-import { useState, useRef, useMemo } from 'react';
-import { X, Upload, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, Loader, Table2, FileSpreadsheet, GraduationCap, ArrowRight } from 'lucide-react';
+import { useState, useRef, useMemo, useEffect } from 'react';
+import { X, Upload, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, Loader, Table2, FileSpreadsheet, GraduationCap, ArrowRight, ArrowRightLeft } from 'lucide-react';
 import { parsearExcelClases, parsearExcelUTEC } from '../../utils/excelImporter';
-import { analizarImport, ejecutarImport, guardarSnapshotCarga } from '../../services/clasesService';
+import { analizarImport, ejecutarImport, guardarSnapshotCarga, actualizarClase, obtenerLaboratorios } from '../../services/clasesService';
 import toast from 'react-hot-toast';
 
 const FASES = {
@@ -63,6 +63,14 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
   const [archivos, setArchivos] = useState([]); // [{ nombre, total, validas, errores }]
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
+
+  // Mover una clase existente a otro lab, directo desde la tarjeta de conflicto
+  const [labs, setLabs] = useState([]);
+  const [moviendoClaseId, setMoviendoClaseId] = useState(null);
+  const [labDestinoMover, setLabDestinoMover] = useState('');
+  const [guardandoMover, setGuardandoMover] = useState(false);
+
+  useEffect(() => { obtenerLaboratorios().then(setLabs).catch(() => {}); }, []);
 
   // Agrupar conflictos por clase importada
   const conflictGroups = useMemo(() => {
@@ -173,6 +181,35 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
     } catch (err) {
       toast.error('Error al importar: ' + err.message);
       setFase(FASES.VALIDACION);
+    }
+  }
+
+  // Mueve una clase existente (la que choca) a otro laboratorio, ahora mismo,
+  // y vuelve a analizar contra el import para que el conflicto desaparezca
+  // de la lista si ya no aplica.
+  async function moverClaseExistente(claseExistente, nuevoLabId) {
+    if (!nuevoLabId || nuevoLabId === claseExistente.labId) return;
+    setGuardandoMover(true);
+    try {
+      await actualizarClase(claseExistente.id, { labId: nuevoLabId, modulos: [] });
+      toast.success(`${claseExistente.nombreAsignatura} movida a ${labs.find(l => l.id === nuevoLabId)?.nombre || nuevoLabId}`);
+      setMoviendoClaseId(null);
+      setLabDestinoMover('');
+      const a = await analizarImport(ciclo.id, resultado.validas);
+      setAnalisis(a);
+      // Conserva decisiones ya tomadas; los conflictos nuevos entran en 'omitir' por defecto
+      setDecisions(prev => {
+        const next = {};
+        a.conflictos.forEach(c => {
+          const key = IDENTITY_KEY(c.claseImportada);
+          next[key] = prev[key] || 'omitir';
+        });
+        return next;
+      });
+    } catch (err) {
+      toast.error('Error al mover la clase: ' + err.message);
+    } finally {
+      setGuardandoMover(false);
     }
   }
 
@@ -512,9 +549,46 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
                         <div className="px-4 py-2 bg-red-50/50 border-b border-gray-200">
                           <p className="text-xs font-medium text-red-700 mb-1">Choca con {group.conflictosCon.length === 1 ? 'esta clase existente' : `estas ${group.conflictosCon.length} clases existentes`}:</p>
                           {group.conflictosCon.map((ce, i) => (
-                            <div key={i} className="text-xs text-red-600 py-0.5 flex items-start gap-1.5">
-                              <ArrowRight size={11} className="mt-0.5 shrink-0" />
-                              <span><strong>{ce.nombreAsignatura}</strong> Sec. {ce.seccion} · {fmtDiasLargo(ce.diasSemana)} · {ce.horaInicio}–{ce.horaFin}</span>
+                            <div key={i} className="py-1">
+                              <div className="text-xs text-red-600 flex items-start gap-1.5">
+                                <ArrowRight size={11} className="mt-0.5 shrink-0" />
+                                <span className="flex-1"><strong>{ce.nombreAsignatura}</strong> Sec. {ce.seccion} · {fmtDiasLargo(ce.diasSemana)} · {ce.horaInicio}–{ce.horaFin}</span>
+                              </div>
+                              {moviendoClaseId === ce.id ? (
+                                <div className="flex items-center gap-1.5 mt-1.5 ml-[18px]">
+                                  <select
+                                    value={labDestinoMover}
+                                    onChange={e => setLabDestinoMover(e.target.value)}
+                                    className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
+                                    autoFocus
+                                  >
+                                    <option value="">Elegir laboratorio…</option>
+                                    {labs.filter(l => l.id !== ce.labId).map(l => (
+                                      <option key={l.id} value={l.id}>{l.nombre}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    onClick={() => moverClaseExistente(ce, labDestinoMover)}
+                                    disabled={!labDestinoMover || guardandoMover}
+                                    className="px-2 py-1 text-xs font-semibold text-white bg-utec-primary rounded-lg hover:bg-utec-dark disabled:opacity-40"
+                                  >
+                                    {guardandoMover ? 'Moviendo…' : 'Confirmar'}
+                                  </button>
+                                  <button
+                                    onClick={() => { setMoviendoClaseId(null); setLabDestinoMover(''); }}
+                                    className="p-1 text-gray-400 hover:text-gray-600"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => { setMoviendoClaseId(ce.id); setLabDestinoMover(''); }}
+                                  className="flex items-center gap-1 mt-1 ml-[18px] text-[11px] font-medium text-utec-primary hover:underline"
+                                >
+                                  <ArrowRightLeft size={10} /> Mover esta clase a otro lab para liberar el conflicto
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>
