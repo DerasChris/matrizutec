@@ -35,7 +35,17 @@ function detectarConflictos(clases) {
       if (!diasComunes.length) continue;
       const [ai, af] = [horaAMin(a.horaInicio), horaAMin(a.horaFin)];
       const [bi, bf] = [horaAMin(b.horaInicio), horaAMin(b.horaFin)];
-      if (ai < bf && af > bi) pares.push({ a, b, diasComunes });
+      if (!(ai < bf && af > bi)) continue;
+
+      // Mismo lab/día/horario no es conflicto real si el lab tiene módulos
+      // y cada clase ocupa uno distinto (p. ej. Lab 03: m1 vs m3 conviven).
+      // Solo es conflicto si comparten módulo, o si alguna ocupa el
+      // laboratorio completo (modulos vacío).
+      const modA = Array.isArray(a.modulos) ? a.modulos : [];
+      const modB = Array.isArray(b.modulos) ? b.modulos : [];
+      if (modA.length > 0 && modB.length > 0 && !modA.some(m => modB.includes(m))) continue;
+
+      pares.push({ a, b, diasComunes });
     }
   }
   return pares;
