@@ -148,7 +148,7 @@ export default function GestionAsistencia() {
 
           <div className="p-6 flex-1">
             {tab === 'pins' && (
-              <TabPins clases={clases} docentes={docentes} onGuardado={cargar} />
+              <TabPins clases={clases} docentes={docentes} labMap={labMap} onGuardado={cargar} />
             )}
             {tab === 'qr' && (
               <TabQR labs={labs} />
@@ -171,8 +171,9 @@ export default function GestionAsistencia() {
 // Pestaña: PINs de docentes
 // ─────────────────────────────────────────────────────────────────
 
-function TabPins({ clases, docentes, onGuardado }) {
+function TabPins({ clases, docentes, labMap, onGuardado }) {
   const [busqueda, setBusqueda] = useState('');
+  const [filtroLab, setFiltroLab] = useState('');
   const [guardandoId, setGuardandoId] = useState(null);
   const [manualAbierto, setManualAbierto] = useState(false);
   const [manualNombre, setManualNombre] = useState('');
@@ -191,25 +192,33 @@ function TabPins({ clases, docentes, onGuardado }) {
     [clases]
   );
 
-  const nombresDistintos = useMemo(() => {
-    const set = new Set();
+  // Qué laboratorios da cada docente — para el filtro y la columna "Labs".
+  const labsPorDocente = useMemo(() => {
+    const map = {};
     for (const c of clases) {
       if (c.tipo !== TIPOS_CLASE.REGULAR) continue;
       if (c.activo === false) continue;
       const nombre = (c.docente || '').trim();
       if (!nombre || nombre.toUpperCase() === NOMBRE_REVISAR) continue;
-      set.add(nombre);
+      if (!map[nombre]) map[nombre] = new Set();
+      map[nombre].add(c.labId);
     }
+    return map;
+  }, [clases]);
+
+  const nombresDistintos = useMemo(() => {
+    const set = new Set();
+    for (const nombre of Object.keys(labsPorDocente)) set.add(nombre);
     // Incluye también docentes ya registrados aunque ya no tengan clase activa este ciclo
     for (const d of docentes) {
       if (d.activo !== false) set.add(d.nombre);
     }
     return [...set].sort((a, b) => a.localeCompare(b));
-  }, [clases, docentes]);
+  }, [labsPorDocente, docentes]);
 
-  const filas = nombresDistintos.filter(n =>
-    !busqueda.trim() || n.toLowerCase().includes(busqueda.toLowerCase())
-  );
+  const filas = nombresDistintos
+    .filter(n => !busqueda.trim() || n.toLowerCase().includes(busqueda.toLowerCase()))
+    .filter(n => !filtroLab || labsPorDocente[n]?.has(filtroLab));
 
   async function asignarPin(nombre, pinExistente = null, docenteId = null) {
     setGuardandoId(nombre);
@@ -301,6 +310,14 @@ function TabPins({ clases, docentes, onGuardado }) {
             className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
           />
         </div>
+        <select
+          value={filtroLab}
+          onChange={e => setFiltroLab(e.target.value)}
+          className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
+        >
+          <option value="">Todos los labs</option>
+          {Object.values(labMap).map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+        </select>
         <button
           onClick={() => setManualAbierto(v => !v)}
           className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
@@ -363,20 +380,38 @@ function TabPins({ clases, docentes, onGuardado }) {
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Docente</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Laboratorios</th>
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">PIN</th>
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filas.length === 0 && (
-              <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-400 text-sm">Sin docentes para mostrar</td></tr>
+              <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400 text-sm">Sin docentes para mostrar</td></tr>
             )}
             {filas.map(nombre => {
               const docente = docentesPorNombre[nombre];
               const cargandoFila = guardandoId === nombre;
+              const labsDelDocente = [...(labsPorDocente[nombre] || [])];
               return (
                 <tr key={nombre} className="hover:bg-gray-50">
                   <td className="px-4 py-2.5 text-gray-900">{nombre}</td>
+                  <td className="px-4 py-2.5">
+                    {labsDelDocente.length === 0 ? (
+                      <span className="text-gray-400 italic">—</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {labsDelDocente.map(labId => (
+                          <span
+                            key={labId}
+                            className="text-[10px] font-medium text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded"
+                          >
+                            {labMap[labId]?.nombre || labId}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 font-mono text-gray-700">
                     {docente ? docente.pin : <span className="text-gray-400 font-sans italic">Sin asignar</span>}
                   </td>
