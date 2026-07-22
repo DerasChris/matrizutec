@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { QRCodeCanvas } from 'qrcode.react';
 import {
   QrCode, FileBarChart, RefreshCw, KeyRound, Printer,
-  Download, AlertTriangle, Plus, Search,
+  Download, AlertTriangle, Plus, Search, Users,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { obtenerTodosLosCiclos } from '../../services/ciclosService';
@@ -178,6 +178,8 @@ function TabPins({ clases, docentes, onGuardado }) {
   const [manualNombre, setManualNombre] = useState('');
   const [manualPin, setManualPin] = useState('');
   const [guardandoManual, setGuardandoManual] = useState(false);
+  const [asignandoTodos, setAsignandoTodos] = useState(false);
+  const [progreso, setProgreso] = useState({ hecho: 0, total: 0 });
 
   const docentesPorNombre = useMemo(
     () => Object.fromEntries(docentes.map(d => [d.nombre, d])),
@@ -222,6 +224,31 @@ function TabPins({ clases, docentes, onGuardado }) {
     } finally {
       setGuardandoId(null);
     }
+  }
+
+  const sinPinCount = filas.filter(n => !docentesPorNombre[n]).length;
+
+  async function asignarPinATodos() {
+    const pendientes = nombresDistintos.filter(n => !docentesPorNombre[n]);
+    if (pendientes.length === 0) { toast('Todos los docentes ya tienen PIN'); return; }
+    setAsignandoTodos(true);
+    setProgreso({ hecho: 0, total: pendientes.length });
+    let docentesSimulados = [...docentes];
+    let errores = 0;
+    for (const nombre of pendientes) {
+      try {
+        const pin = generarPinUnico(docentesSimulados);
+        await guardarPinDocente({ nombre, pin });
+        docentesSimulados = [...docentesSimulados, { nombre, pin, activo: true }];
+      } catch (e) {
+        console.error(e);
+        errores++;
+      }
+      setProgreso(p => ({ ...p, hecho: p.hecho + 1 }));
+    }
+    setAsignandoTodos(false);
+    toast.success(`PIN asignado a ${pendientes.length - errores} docente(s)${errores ? `, ${errores} con error` : ''}`);
+    onGuardado();
   }
 
   async function guardarManual(e) {
@@ -279,6 +306,21 @@ function TabPins({ clases, docentes, onGuardado }) {
           className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
         >
           <Plus size={14} /> Agregar manual
+        </button>
+        <button
+          onClick={asignarPinATodos}
+          disabled={asignandoTodos || sinPinCount === 0}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm border border-utec-primary text-utec-primary rounded-lg hover:bg-utec-light disabled:opacity-50 disabled:border-gray-300 disabled:text-gray-400"
+        >
+          {asignandoTodos ? (
+            <>
+              <RefreshCw size={14} className="animate-spin" /> Asignando {progreso.hecho}/{progreso.total}…
+            </>
+          ) : (
+            <>
+              <Users size={14} /> Asignar PIN a todos{sinPinCount > 0 ? ` (${sinPinCount})` : ''}
+            </>
+          )}
         </button>
       </div>
 
@@ -478,6 +520,7 @@ function TabReportes({ asistencias, labMap, cicloNombre }) {
       'Hora marcado': a.horaMarcado,
       'Alumnos llegaron': a.alumnosLlegaron,
       Inscritos: a.inscritos,
+      Estado: a.fueraDeHorario ? 'Fuera de horario' : 'En horario',
     }));
     const ws = XLSX.utils.json_to_sheet(filas);
     const wb = XLSX.utils.book_new();
@@ -528,14 +571,14 @@ function TabReportes({ asistencias, labMap, cicloNombre }) {
         <table className="w-full text-sm border-collapse">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              {['Fecha', 'Lab', 'Materia', 'Sección', 'Docente', 'Horario', 'Marcado', 'Alumnos'].map(h => (
+              {['Fecha', 'Lab', 'Materia', 'Sección', 'Docente', 'Horario', 'Marcado', 'Alumnos', 'Estado'].map(h => (
                 <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtradas.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-sm">Sin registros de asistencia</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400 text-sm">Sin registros de asistencia</td></tr>
             )}
             {filtradas.map(a => (
               <tr key={a.id} className="hover:bg-gray-50">
@@ -547,6 +590,17 @@ function TabReportes({ asistencias, labMap, cicloNombre }) {
                 <td className="px-3 py-2 whitespace-nowrap font-mono text-gray-700">{a.horaInicio}–{a.horaFin}</td>
                 <td className="px-3 py-2 whitespace-nowrap font-mono text-gray-500">{a.horaMarcado}</td>
                 <td className="px-3 py-2 text-center text-gray-700">{a.alumnosLlegaron}/{a.inscritos}</td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {a.fueraDeHorario ? (
+                    <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                      Marcó fuera de horario
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
+                      En horario
+                    </span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -109,10 +109,24 @@ function horaAMinutos(hora) {
   return h * 60 + m;
 }
 
-// Clases del docente en ese lab, en este momento, dentro de la ventana
-// [horaInicio, horaFin + 10min]. Devuelve la(s) que califican, ordenadas por
-// cercanía a la hora fin (la más probable si hay más de una, caso raro).
-async function buscarClasesActivas(db, { docenteNombre, labId, cicloId, ahora }) {
+// Si la clase NO está en su día/horario oficial ahora mismo (con 10 min de
+// gracia tras la hora fin). Se usa solo para etiquetar el registro — nunca
+// para bloquear: el docente siempre puede marcar.
+function esFueraDeHorario(clase, ahora) {
+  if (!Array.isArray(clase.diasSemana) || !clase.diasSemana.includes(ahora.diaSemanaId)) return true;
+  if (clase.fechaInicio && ahora.fecha < clase.fechaInicio) return true;
+  if (clase.fechaFin && ahora.fecha > clase.fechaFin) return true;
+
+  const minutosAhora = horaAMinutos(ahora.horaHHMM);
+  const inicio = horaAMinutos(clase.horaInicio);
+  const finConGracia = horaAMinutos(clase.horaFin) + GRACIA_MINUTOS;
+  return minutosAhora < inicio || minutosAhora > finConGracia;
+}
+
+// Todas las clases regulares activas del docente en ese lab/ciclo — sin
+// filtrar por día ni hora. El docente elige cuál marcar; nunca se le
+// bloquea por no estar "en horario", solo se etiqueta el registro.
+async function obtenerClasesDelDocenteEnLab(db, { docenteNombre, labId, cicloId }) {
   const snap = await db.collection('clasesRegulares')
     .where('cicloId', '==', cicloId)
     .where('labId', '==', labId)
@@ -121,28 +135,7 @@ async function buscarClasesActivas(db, { docenteNombre, labId, cicloId, ahora })
     .where('activo', '==', true)
     .get();
 
-  const minutosAhora = horaAMinutos(ahora.horaHHMM);
-  const candidatas = [];
-
-  snap.forEach((doc) => {
-    const c = doc.data();
-    if (!Array.isArray(c.diasSemana) || !c.diasSemana.includes(ahora.diaSemanaId)) return;
-    if (c.fechaInicio && ahora.fecha < c.fechaInicio) return;
-    if (c.fechaFin && ahora.fecha > c.fechaFin) return;
-
-    const inicio = horaAMinutos(c.horaInicio);
-    const finConGracia = horaAMinutos(c.horaFin) + GRACIA_MINUTOS;
-    if (minutosAhora < inicio || minutosAhora > finConGracia) return;
-
-    candidatas.push({
-      id: doc.id,
-      ...c,
-      _distanciaFin: Math.abs(horaAMinutos(c.horaFin) - minutosAhora),
-    });
-  });
-
-  candidatas.sort((a, b) => a._distanciaFin - b._distanciaFin);
-  return candidatas;
+  return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
 async function buscarDocentePorPin(pin) {
@@ -160,8 +153,10 @@ async function obtenerCicloActivo() {
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
-// Paso 1: valida PIN + ventana horaria, sin escribir nada. Devuelve los
-// datos de la clase para que el docente confirme antes de marcar.
+// Paso 1: valida el PIN, sin escribir nada. Devuelve TODAS las clases del
+// docente en ese laboratorio para que elija cuál marcar — nunca bloquea por
+// horario, solo indica cuál está "en horario ahora" para orientar la
+// elección cuando hay varias.
 exports.buscarClaseParaAsistencia = functions.https.onCall(async (data) => {
   const labId = data?.labId;
   const pin = data?.pin;
@@ -180,41 +175,47 @@ exports.buscarClaseParaAsistencia = functions.https.onCall(async (data) => {
   }
 
   const ahora = ahoraElSalvador();
-  const candidatas = await buscarClasesActivas(admin.firestore(), {
+  const clases = await obtenerClasesDelDocenteEnLab(admin.firestore(), {
     docenteNombre: docente.nombre,
     labId,
     cicloId: ciclo.id,
-    ahora,
   });
 
-  if (candidatas.length === 0) {
+  if (clases.length === 0) {
     throw new functions.https.HttpsError(
       'not-found',
-      'No tienes clase activa en este laboratorio en este momento.'
+      'No tienes clases asignadas en este laboratorio.'
     );
   }
 
-  const clase = candidatas[0];
-  const asistenciaRef = admin.firestore().collection('asistencias').doc(`${clase.id}_${ahora.fecha}`);
-  const existente = await asistenciaRef.get();
+  const db = admin.firestore();
+  const clasesConEstado = await Promise.all(clases.map(async (clase) => {
+    const existente = await db.collection('asistencias').doc(`${clase.id}_${ahora.fecha}`).get();
+    return {
+      claseId: clase.id,
+      codigoAsignatura: clase.codigoAsignatura || '',
+      nombreAsignatura: clase.nombreAsignatura || '',
+      seccion: clase.seccion || '',
+      diasSemana: clase.diasSemana || [],
+      horaInicio: clase.horaInicio,
+      horaFin: clase.horaFin,
+      inscritos: clase.inscritos || 0,
+      fueraDeHorario: esFueraDeHorario(clase, ahora),
+      yaMarcada: existente.exists,
+      alumnosPrevios: existente.exists ? existente.data().alumnosLlegaron : null,
+    };
+  }));
 
-  return {
-    claseId: clase.id,
-    docente: docente.nombre,
-    codigoAsignatura: clase.codigoAsignatura || '',
-    nombreAsignatura: clase.nombreAsignatura || '',
-    seccion: clase.seccion || '',
-    horaInicio: clase.horaInicio,
-    horaFin: clase.horaFin,
-    inscritos: clase.inscritos || 0,
-    yaMarcada: existente.exists,
-    alumnosPrevios: existente.exists ? existente.data().alumnosLlegaron : null,
-  };
+  // Las que están en horario ahora primero, para que sean la opción obvia.
+  clasesConEstado.sort((a, b) => Number(a.fueraDeHorario) - Number(b.fueraDeHorario));
+
+  return { docente: docente.nombre, clases: clasesConEstado };
 });
 
-// Paso 2: re-valida todo de forma independiente (nunca confía en claseId
-// del cliente sin re-verificar que siga siendo válido para ese PIN/momento)
-// y crea o corrige el registro de asistencia del día.
+// Paso 2: re-valida PIN + pertenencia de la clase de forma independiente
+// (nunca confía en claseId del cliente sin re-verificar que sea una clase
+// real de ese docente en ese lab) y crea o corrige el registro del día.
+// Siempre permite marcar; solo etiqueta fueraDeHorario si corresponde.
 exports.registrarAsistencia = functions.https.onCall(async (data) => {
   const labId = data?.labId;
   const pin = data?.pin;
@@ -235,21 +236,22 @@ exports.registrarAsistencia = functions.https.onCall(async (data) => {
     throw new functions.https.HttpsError('failed-precondition', 'No hay un ciclo activo.');
   }
 
-  const ahora = ahoraElSalvador();
-  const candidatas = await buscarClasesActivas(admin.firestore(), {
+  const clases = await obtenerClasesDelDocenteEnLab(admin.firestore(), {
     docenteNombre: docente.nombre,
     labId,
     cicloId: ciclo.id,
-    ahora,
   });
 
-  const clase = candidatas.find((c) => c.id === claseId);
+  const clase = clases.find((c) => c.id === claseId);
   if (!clase) {
     throw new functions.https.HttpsError(
       'failed-precondition',
-      'Esa clase ya no está activa para marcar asistencia.'
+      'Esa clase no te pertenece en este laboratorio.'
     );
   }
+
+  const ahora = ahoraElSalvador();
+  const fueraDeHorario = esFueraDeHorario(clase, ahora);
 
   await admin.firestore().collection('asistencias').doc(`${clase.id}_${ahora.fecha}`).set({
     claseId: clase.id,
@@ -266,6 +268,7 @@ exports.registrarAsistencia = functions.https.onCall(async (data) => {
     horaMarcado: ahora.horaHHMM,
     alumnosLlegaron: alumnos,
     inscritos: clase.inscritos || 0,
+    fueraDeHorario,
     marcadoEn: admin.firestore.FieldValue.serverTimestamp(),
   });
 
@@ -275,5 +278,6 @@ exports.registrarAsistencia = functions.https.onCall(async (data) => {
     horaInicio: clase.horaInicio,
     horaFin: clase.horaFin,
     alumnosLlegaron: alumnos,
+    fueraDeHorario,
   };
 });
