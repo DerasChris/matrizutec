@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle2, KeyRound, Loader2, AlertTriangle, Users, Clock } from 'lucide-react';
+import { CheckCircle2, KeyRound, Loader2, AlertTriangle, Users, Clock, ChevronRight } from 'lucide-react';
 import { obtenerLaboratorio } from '../services/laboratoriosService';
 import { buscarClaseParaAsistencia, registrarAsistencia } from '../services/asistenciaService';
 
-const FASES = { CARGANDO_LAB: 'cargando_lab', PIN: 'pin', CONFIRMAR: 'confirmar', EXITO: 'exito' };
+const FASES = { CARGANDO_LAB: 'cargando_lab', PIN: 'pin', SELECCIONAR: 'seleccionar', CONFIRMAR: 'confirmar', EXITO: 'exito' };
+const DIA_CORTO = { lunes: 'Lu', martes: 'Ma', miercoles: 'Mi', jueves: 'Ju', viernes: 'Vi', sabado: 'Sá', domingo: 'Do' };
+
+function fmtDias(dias) {
+  if (!Array.isArray(dias) || dias.length === 0) return '';
+  return dias.map(d => DIA_CORTO[d] || d).join(' ');
+}
 
 export default function AsistenciaEscaneo() {
   const { labId } = useParams();
@@ -13,6 +19,7 @@ export default function AsistenciaEscaneo() {
   const [pin, setPin] = useState('');
   const [verificando, setVerificando] = useState(false);
   const [errorPin, setErrorPin] = useState('');
+  const [clases, setClases] = useState([]);
   const [clase, setClase] = useState(null);
   const [alumnos, setAlumnos] = useState('');
   const [guardando, setGuardando] = useState(false);
@@ -24,6 +31,12 @@ export default function AsistenciaEscaneo() {
       .catch(() => setFase(FASES.PIN));
   }, [labId]);
 
+  function elegirClase(c) {
+    setClase(c);
+    setAlumnos(c.yaMarcada && c.alumnosPrevios != null ? String(c.alumnosPrevios) : '');
+    setFase(FASES.CONFIRMAR);
+  }
+
   async function handleVerificarPin(e) {
     e.preventDefault();
     if (pin.length !== 4) { setErrorPin('El PIN debe tener 4 dígitos'); return; }
@@ -31,9 +44,12 @@ export default function AsistenciaEscaneo() {
     setErrorPin('');
     try {
       const res = await buscarClaseParaAsistencia({ labId, pin });
-      setClase(res);
-      setAlumnos(res.yaMarcada && res.alumnosPrevios != null ? String(res.alumnosPrevios) : '');
-      setFase(FASES.CONFIRMAR);
+      setClases(res.clases);
+      if (res.clases.length === 1) {
+        elegirClase(res.clases[0]);
+      } else {
+        setFase(FASES.SELECCIONAR);
+      }
     } catch (err) {
       setErrorPin(err.message || 'No se pudo verificar el PIN');
     } finally {
@@ -59,7 +75,7 @@ export default function AsistenciaEscaneo() {
   }
 
   function reiniciar() {
-    setPin(''); setErrorPin(''); setClase(null); setAlumnos(''); setResultado(null);
+    setPin(''); setErrorPin(''); setClases([]); setClase(null); setAlumnos(''); setResultado(null);
     setFase(FASES.PIN);
   }
 
@@ -116,6 +132,45 @@ export default function AsistenciaEscaneo() {
             </form>
           )}
 
+          {fase === FASES.SELECCIONAR && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600 text-center">Tienes varias clases en este laboratorio — elige una</p>
+              <div className="space-y-2">
+                {clases.map(c => (
+                  <button
+                    key={c.claseId}
+                    onClick={() => elegirClase(c)}
+                    className="w-full flex items-center gap-3 text-left border-2 border-gray-200 hover:border-utec-primary rounded-xl px-3 py-2.5 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{c.nombreAsignatura}</p>
+                      <p className="text-xs text-gray-500">
+                        {c.codigoAsignatura}{c.seccion ? ` · Sec. ${c.seccion}` : ''} · {fmtDias(c.diasSemana)} {c.horaInicio}–{c.horaFin}
+                      </p>
+                      {c.fueraDeHorario ? (
+                        <span className="inline-block mt-1 text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                          Fuera de horario
+                        </span>
+                      ) : (
+                        <span className="inline-block mt-1 text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
+                          En horario ahora
+                        </span>
+                      )}
+                    </div>
+                    <ChevronRight size={16} className="text-gray-300 shrink-0" />
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={reiniciar}
+                className="w-full text-xs text-gray-400 hover:text-gray-600"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
+
           {fase === FASES.CONFIRMAR && clase && (
             <form onSubmit={handleConfirmar} className="space-y-4">
               <div className="bg-utec-light rounded-xl p-4 text-center">
@@ -127,8 +182,14 @@ export default function AsistenciaEscaneo() {
                 <p className="flex items-center justify-center gap-1.5 text-xs text-gray-600 mt-1.5">
                   <Clock size={12} /> {clase.horaInicio}–{clase.horaFin}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">{clase.docente}</p>
               </div>
+
+              {clase.fueraDeHorario && (
+                <p className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <AlertTriangle size={13} className="shrink-0" />
+                  Estás marcando fuera del horario establecido — quedará etiquetado como tal.
+                </p>
+              )}
 
               {clase.yaMarcada && (
                 <p className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -165,10 +226,10 @@ export default function AsistenciaEscaneo() {
               </button>
               <button
                 type="button"
-                onClick={reiniciar}
+                onClick={() => (clases.length > 1 ? setFase(FASES.SELECCIONAR) : reiniciar())}
                 className="w-full text-xs text-gray-400 hover:text-gray-600"
               >
-                Cancelar
+                {clases.length > 1 ? 'Elegir otra clase' : 'Cancelar'}
               </button>
             </form>
           )}
@@ -179,6 +240,11 @@ export default function AsistenciaEscaneo() {
               <p className="text-base font-bold text-gray-900">Asistencia registrada</p>
               <p className="text-sm text-gray-600">{resultado.nombreAsignatura}</p>
               <p className="text-xs text-gray-500">{resultado.horaInicio}–{resultado.horaFin}</p>
+              {resultado.fueraDeHorario && (
+                <span className="inline-block text-[10px] font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
+                  Marcó fuera de horario
+                </span>
+              )}
               <p className="text-2xl font-bold text-utec-primary">{resultado.alumnosLlegaron} alumnos</p>
               <button
                 onClick={reiniciar}
