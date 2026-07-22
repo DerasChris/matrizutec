@@ -131,5 +131,22 @@ service cloud.firestore {
       allow update: if isAuth() && esAdmin();
       allow delete: if esJefa();
     }
+
+    // PINs de asistencia docente. Nunca lectura pública: el PIN es el único
+    // secreto que valida al docente en el escaneo, se verifica solo desde
+    // las Cloud Functions (Admin SDK, no pasa por estas reglas).
+    match /docentes/{docenteId} {
+      allow read: if isAuth() && esAdmin();
+      allow write: if isAuth() && esAdmin() && usuarioActivo();
+    }
+
+    // Registro de asistencia marcado por QR + PIN. Sin escritura de cliente
+    // en ningún caso: solo lo crean/corrigen las Cloud Functions
+    // (buscarClaseParaAsistencia / registrarAsistencia) vía Admin SDK,
+    // que ignora estas reglas — así el registro queda a salvo de manipulación.
+    match /asistencias/{asistenciaId} {
+      allow read: if isAuth() && esAdmin();
+      allow create, update, delete: if false;
+    }
   }
 }

@@ -142,6 +142,8 @@ export const COLECCIONES = {
   NOTIFICACIONES: 'notificaciones',
   CONFIGURACION: 'configuracion',
   MAIL_QUEUE: 'mail',
+  DOCENTES: 'docentes',
+  ASISTENCIAS: 'asistencias',
 };
 
 export const MODULOS_LAB_03 = [
