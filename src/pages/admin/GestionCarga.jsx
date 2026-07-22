@@ -12,7 +12,7 @@ import {
   eliminarClasesRegularesDelCiclo,
 } from '../../services/clasesService';
 import ClaseFormulario from '../../components/admin/ClaseFormulario';
-import { DIAS_SEMANA, TIPOS_CLASE } from '../../lib/constants';
+import { DIAS_SEMANA, TIPOS_CLASE, ROLES } from '../../lib/constants';
 
 const DIA_CORTO = {
   lunes: 'Lu', martes: 'Ma', miercoles: 'Mi',
@@ -104,7 +104,7 @@ export default function GestionCarga() {
   const [tab,           setTab]           = useState('carga');
   const [busqueda,      setBusqueda]      = useState('');
   const [filtroLab,     setFiltroLab]     = useState('');
-  const [filtroDia,     setFiltroDia]     = useState('');
+  const [filtroDias,    setFiltroDias]    = useState([]); // array de ids de día, OR entre sí
   const [filtroEstado,  setFiltroEstado]  = useState('activas');
   const [soloConflicto, setSoloConflicto] = useState(false);
   const [soloPendientes, setSoloPendientes] = useState(false);
@@ -122,10 +122,15 @@ export default function GestionCarga() {
   const [vaciarConfirmText,  setVaciarConfirmText]  = useState('');
   const [vaciando,           setVaciando]           = useState(false);
 
+  // Un encargado solo ve/edita labs asignados. Sin nada asignado, ve vacío
+  // (no todos los labs) hasta que la jefa le asigne uno.
+  const esEncargado = perfil?.rol === ROLES.ENCARGADO;
+  const labsAsignadosSet = esEncargado ? new Set(perfil?.labsAsignados || []) : null;
+
   useEffect(() => {
     Promise.all([obtenerTodosLosCiclos(), obtenerLaboratorios()]).then(([c, l]) => {
       setCiclos(c);
-      setLabs(l);
+      setLabs(labsAsignadosSet ? l.filter(lab => labsAsignadosSet.has(lab.id)) : l);
       const activo = c.find(x => x.activo);
       if (activo) setCicloId(activo.id);
     });
@@ -139,7 +144,7 @@ export default function GestionCarga() {
   function recargar() {
     setCargando(true);
     obtenerClasesDelCiclo(cicloId)
-      .then(setClases)
+      .then(cs => setClases(labsAsignadosSet ? cs.filter(c => labsAsignadosSet.has(c.labId)) : cs))
       .finally(() => setCargando(false));
   }
 
@@ -163,7 +168,7 @@ export default function GestionCarga() {
     if (filtroEstado === 'activas')   r = r.filter(c => c.activo !== false);
     if (filtroEstado === 'inactivas') r = r.filter(c => c.activo === false);
     if (filtroLab)  r = r.filter(c => c.labId === filtroLab);
-    if (filtroDia)  r = r.filter(c => (c.diasSemana || []).includes(filtroDia));
+    if (filtroDias.length > 0) r = r.filter(c => (c.diasSemana || []).some(d => filtroDias.includes(d)));
     if (soloConflicto) r = r.filter(c => conflictIds.has(c.id));
     if (soloPendientes) r = r.filter(c => c.pendienteRevision && c.activo !== false);
     if (busqueda.trim()) {
@@ -190,7 +195,7 @@ export default function GestionCarga() {
       return ordenDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
     });
     return r;
-  }, [clases, filtroEstado, filtroLab, filtroDia, busqueda, soloConflicto, soloPendientes, ordenCol, ordenDir, labMap, conflictIds]);
+  }, [clases, filtroEstado, filtroLab, filtroDias, busqueda, soloConflicto, soloPendientes, ordenCol, ordenDir, labMap, conflictIds]);
 
   const conflictGroups = useMemo(() => {
     const byLab = {};
@@ -334,23 +339,30 @@ export default function GestionCarga() {
               )}
             </div>
 
-            <button
-              onClick={abrirFechasModal}
-              disabled={!cicloId}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 disabled:opacity-40"
-              title="Estandarizar fecha de inicio y fin de todas las clases regulares del ciclo"
-            >
-              <CalendarRange size={14} /> Estandarizar fechas
-            </button>
+            {/* Estas dos acciones tocan TODO el ciclo sin distinguir laboratorio
+                (fechas y borrado masivo), por eso quedan solo para jefa aunque
+                un encargado esté viendo la página. */}
+            {!esEncargado && (
+              <>
+                <button
+                  onClick={abrirFechasModal}
+                  disabled={!cicloId}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 disabled:opacity-40"
+                  title="Estandarizar fecha de inicio y fin de todas las clases regulares del ciclo"
+                >
+                  <CalendarRange size={14} /> Estandarizar fechas
+                </button>
 
-            <button
-              onClick={() => { setVaciarConfirmText(''); setVaciarModalAbierto(true); }}
-              disabled={!cicloId || regularesTotalCount === 0}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-40"
-              title="Eliminar todas las clases regulares del ciclo para volver a importar desde cero"
-            >
-              <Trash2 size={14} /> Vaciar y reimportar
-            </button>
+                <button
+                  onClick={() => { setVaciarConfirmText(''); setVaciarModalAbierto(true); }}
+                  disabled={!cicloId || regularesTotalCount === 0}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-40"
+                  title="Eliminar todas las clases regulares del ciclo para volver a importar desde cero"
+                >
+                  <Trash2 size={14} /> Vaciar y reimportar
+                </button>
+              </>
+            )}
 
             <button
               onClick={recargar}
@@ -426,14 +438,34 @@ export default function GestionCarga() {
               <option value="">Todos los labs</option>
               {labs.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
             </select>
-            <select
-              value={filtroDia}
-              onChange={e => setFiltroDia(e.target.value)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
-            >
-              <option value="">Todos los días</option>
-              {DIAS_SEMANA.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
-            </select>
+            <div className="flex items-center gap-1 bg-white border border-gray-300 rounded-lg px-1.5 py-1">
+              {DIAS_SEMANA.map(d => {
+                const activo = filtroDias.includes(d.id);
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => setFiltroDias(f => activo ? f.filter(x => x !== d.id) : [...f, d.id])}
+                    title={d.label}
+                    className={`w-7 h-7 text-xs font-semibold rounded-md transition-colors ${
+                      activo ? 'bg-utec-primary text-white' : 'text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    {DIA_CORTO[d.id]}
+                  </button>
+                );
+              })}
+              {filtroDias.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFiltroDias([])}
+                  title="Limpiar días"
+                  className="ml-0.5 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
             <select
               value={filtroEstado}
               onChange={e => setFiltroEstado(e.target.value)}

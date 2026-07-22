@@ -147,16 +147,18 @@ export default function MatrizLab() {
         obtenerLaboratorios(),
         obtenerCicloActivo(),
       ]);
-      const labsFiltrados =
-        perfil?.rol === ROLES.ENCARGADO &&
-        Array.isArray(perfil?.labsAsignados) &&
-        perfil.labsAsignados.length > 0
-          ? labsData.filter(l => perfil.labsAsignados.includes(l.id))
-          : labsData;
+      // Un encargado solo ve sus labs asignados. Sin nada asignado todavía,
+      // ve la lista vacía (no todos los labs) hasta que la jefa le asigne uno.
+      const labsFiltrados = perfil?.rol === ROLES.ENCARGADO
+        ? labsData.filter(l => (perfil?.labsAsignados || []).includes(l.id))
+        : labsData;
 
       setLabs(labsFiltrados);
       setCiclo(cicloData);
       if (labsFiltrados.length > 0) setLabSel(labsFiltrados[0]);
+      if (perfil?.rol === ROLES.ENCARGADO && labsFiltrados.length === 0) {
+        toast.error('Todavía no tienes laboratorios asignados. Pide a la jefa que te asigne uno.');
+      }
       if (!cicloData) toast.error('No hay un ciclo activo. Crea uno desde el dashboard.');
     } catch (e) {
       console.error(e);
@@ -260,6 +262,13 @@ export default function MatrizLab() {
         <h1 className="text-2xl font-bold text-gray-900">Gestión de clases regulares</h1>
         <p className="text-gray-600 text-sm mt-1">{ciclo.nombre}</p>
       </div>
+
+      {labs.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center mb-4">
+          <p className="text-amber-900 font-medium mb-1">Todavía no tienes laboratorios asignados</p>
+          <p className="text-sm text-amber-800">Pide a la jefa que te asigne uno o más desde Gestión de usuarios.</p>
+        </div>
+      )}
 
       {/* ── Barra de controles ── */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
