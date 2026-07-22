@@ -70,6 +70,61 @@ export async function copiarEventoALab(evento, nuevoLabId) {
   return { id: docRef.id, ...datos, labId: nuevoLabId };
 }
 
+// Estandariza fechaInicio/fechaFin de las clases regulares activas de un
+// ciclo. Solo aplica a tipo 'regular': en 'puntual'/'reunion'/'defensa'
+// fechaInicio tiene otro significado (fecha exacta de la ocurrencia), no un
+// límite de recurrencia semanal, y no deben tocarse aquí.
+export async function actualizarFechasRegulares(cicloId, fechaInicio, fechaFin) {
+  const colRef = collection(db, COLECCIONES.CLASES_REGULARES);
+  const q = query(
+    colRef,
+    where('cicloId', '==', cicloId),
+    where('tipo', '==', TIPOS_CLASE.REGULAR),
+    where('activo', '==', true)
+  );
+  const snap = await getDocs(q);
+  const ts = serverTimestamp();
+  const CHUNK = 499;
+  const docs = snap.docs;
+
+  for (let i = 0; i < docs.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + CHUNK).forEach(d => {
+      batch.update(d.ref, { fechaInicio, fechaFin, actualizadoEn: ts });
+    });
+    await batch.commit();
+  }
+
+  return { actualizadas: docs.length };
+}
+
+// Borra PERMANENTEMENTE (no desactiva) las clases tipo 'regular' de un
+// ciclo, para volver a importar el Excel desde cero. No toca puntual/
+// reunion/defensa porque esos no se recrean al reimportar — son entidades
+// manuales aparte. Siempre guarda un snapshot antes de borrar, restaurable
+// desde el historial de carga.
+export async function eliminarClasesRegularesDelCiclo(cicloId, cicloNombre, usuario) {
+  await guardarSnapshotCarga(cicloId, cicloNombre, usuario);
+
+  const colRef = collection(db, COLECCIONES.CLASES_REGULARES);
+  const q = query(
+    colRef,
+    where('cicloId', '==', cicloId),
+    where('tipo', '==', TIPOS_CLASE.REGULAR)
+  );
+  const snap = await getDocs(q);
+  const CHUNK = 499;
+  const docs = snap.docs;
+
+  for (let i = 0; i < docs.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + CHUNK).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  return { eliminadas: docs.length };
+}
+
 export async function obtenerLaboratorios() {
   const snap = await getDocs(
     query(collection(db, COLECCIONES.LABORATORIOS), orderBy('nombre'))

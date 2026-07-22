@@ -76,3 +76,36 @@ export async function obtenerReservasAprobadasDelLabHoy(labId, fechaISO) {
       return r.fechaInicio === fechaISO;
     });
 }
+
+// Igual que obtenerClasesDelLabHoy pero para todos los labs a la vez — usado
+// por el Dashboard para mostrar la disponibilidad de todos los laboratorios
+// de un vistazo, sin hacer una consulta por laboratorio.
+export async function obtenerClasesDeHoyTodosLosLabs(cicloId, diaSemanaId) {
+  if (!cicloId || !diaSemanaId) return [];
+
+  const ref = collection(db, COLECCIONES.CLASES_REGULARES);
+  const q = query(ref, where('cicloId', '==', cicloId), where('activo', '==', true));
+  const snap = await getDocs(q);
+
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(c => Array.isArray(c.diasSemana) && c.diasSemana.includes(diaSemanaId));
+}
+
+// Igual que obtenerReservasAprobadasDelLabHoy pero para todos los labs a la vez.
+export async function obtenerReservasAprobadasDeHoyTodosLosLabs(fechaISO) {
+  if (!fechaISO) return [];
+
+  const ref = collection(db, COLECCIONES.RESERVAS);
+  const q = query(ref, where('estado', '==', 'aprobada'));
+  const snap = await getDocs(q);
+
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(r => {
+      if (Array.isArray(r.ocurrencias)) {
+        return r.ocurrencias.some(o => o.fecha === fechaISO && o.estado === 'aprobada');
+      }
+      return r.fechaInicio === fechaISO;
+    });
+}

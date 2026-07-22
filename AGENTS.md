@@ -113,7 +113,8 @@ No introducir secretos con prefijo `VITE_` salvo valores diseñados para ser pú
 - Los encargados solo deben operar los laboratorios incluidos en `perfil.labsAsignados`.
 - Solo existe un ciclo activo global.
 - Lab 03 tiene módulos `m1` a `m4`.
-- Horario operativo: 06:30 a 20:00, slots de 30 minutos.
+- Horario operativo: 06:30 a 20:30, slots de 30 minutos (hay secciones reales que cierran 18:40-20:10).
+- Hay 15 laboratorios (`lab_01` a `lab_15`); `lab_15` se agregó en 2026-07 a partir de carga académica real (aula "SB-LAB.15").
 - Las reservas aprobadas y clases/eventos deben validarse contra colisiones.
 - Tipos de clase/evento: `regular`, `puntual`, `reunion`, `defensa`.
 - Tipos de reserva: `unica`, `rango`, `recurrente`, `multiples`, `tour`.

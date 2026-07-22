@@ -1,7 +1,7 @@
-import { useState, useRef, useMemo } from 'react';
-import { X, Upload, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, Loader, Table2, FileSpreadsheet, GraduationCap, ArrowRight } from 'lucide-react';
+import { useState, useRef, useMemo, useEffect } from 'react';
+import { X, Upload, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, Loader, Table2, FileSpreadsheet, GraduationCap, ArrowRight, ArrowRightLeft } from 'lucide-react';
 import { parsearExcelClases, parsearExcelUTEC } from '../../utils/excelImporter';
-import { analizarImport, ejecutarImport, guardarSnapshotCarga } from '../../services/clasesService';
+import { analizarImport, ejecutarImport, guardarSnapshotCarga, actualizarClase, obtenerLaboratorios } from '../../services/clasesService';
 import toast from 'react-hot-toast';
 
 const FASES = {
@@ -38,9 +38,9 @@ const FORMATOS = [
   {
     id: 'utec-completo',
     label: 'UTEC — Reporte completo',
-    desc: 'Igual que el básico + CodEmp, Cupo, Disponible, Estado. Filtra automáticamente clases "Cerrado" y aulas virtuales.',
+    desc: 'Igual que el básico + CodEmp, Cupo, Disponible, Estado. "Cerrado" = cupos llenos, sí se importa; filtra aulas virtuales/en línea automáticamente.',
     icon: GraduationCap,
-    hint: 'Formato UTEC completo — filtra Estado=Cerrado, AULA VIRTUAL y EN LINEA automáticamente',
+    hint: 'Formato UTEC completo — filtra AULA VIRTUAL y EN LINEA automáticamente ("Cerrado" = cupo lleno, se importa igual)',
   },
 ];
 
@@ -60,9 +60,17 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
   const [decisions, setDecisions] = useState({});
   const [erroresExpandidos, setErroresExpandidos] = useState(false);
   const [previstaAbierta, setPrevistaAbierta] = useState(false);
-  const [archivoNombre, setArchivoNombre] = useState('');
+  const [archivos, setArchivos] = useState([]); // [{ nombre, total, validas, errores }]
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
+
+  // Mover una clase existente a otro lab, directo desde la tarjeta de conflicto
+  const [labs, setLabs] = useState([]);
+  const [moviendoClaseId, setMoviendoClaseId] = useState(null);
+  const [labDestinoMover, setLabDestinoMover] = useState('');
+  const [guardandoMover, setGuardandoMover] = useState(false);
+
+  useEffect(() => { obtenerLaboratorios().then(setLabs).catch(() => {}); }, []);
 
   // Agrupar conflictos por clase importada
   const conflictGroups = useMemo(() => {
@@ -76,28 +84,58 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
     return Array.from(groups.values());
   }, [analisis]);
 
-  async function procesarArchivo(file) {
-    if (!file) return;
-    if (!file.name.endsWith('.xlsx')) {
-      toast.error('Solo se aceptan archivos .xlsx');
+  // Acepta uno o varios archivos y fusiona sus resultados en un solo análisis.
+  // Necesario cuando un laboratorio aparece en más de un reporte (p. ej. un
+  // lab compartido por dos escuelas): si se importaran por separado, el
+  // segundo archivo desactivaría las clases del primero en ese lab, porque
+  // el alcance de la sincronización es "los labs presentes en el Excel".
+  // Al fusionar antes de analizar, todas las clases de esos labs están
+  // presentes a la vez y nada se pisa entre sí.
+  async function procesarArchivos(fileList) {
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (!files.length) return;
+
+    const invalidos = files.filter(f => !f.name.endsWith('.xlsx'));
+    if (invalidos.length) {
+      toast.error(`Solo se aceptan archivos .xlsx: ${invalidos.map(f => f.name).join(', ')}`);
       return;
     }
-    setArchivoNombre(file.name);
-    const buffer = await file.arrayBuffer();
+
+    const parser = formato === 'estandar' ? parsearExcelClases : parsearExcelUTEC;
+    const porArchivo = [];
+    const validas = [];
+    const errores = [];
+    let total = 0;
+    let omitidas = 0;
+    const desglose = { canceladas: 0, virtuales: 0, aulasRegulares: 0 };
+
     try {
-      const parser = formato === 'estandar' ? parsearExcelClases : parsearExcelUTEC;
-      const res = parser(buffer, ciclo.id);
-      setResultado(res);
-      setFase(FASES.VALIDACION);
+      for (const file of files) {
+        const buffer = await file.arrayBuffer();
+        const res = parser(buffer, ciclo.id);
+        validas.push(...res.validas);
+        errores.push(...res.errores.map(e => ({ ...e, archivo: file.name })));
+        total += res.total;
+        omitidas += res.omitidas || 0;
+        desglose.canceladas += res.desglose?.canceladas || 0;
+        desglose.virtuales += res.desglose?.virtuales || 0;
+        desglose.aulasRegulares += res.desglose?.aulasRegulares || 0;
+        porArchivo.push({ nombre: file.name, total: res.total, validas: res.validas.length, errores: res.errores.length });
+      }
     } catch (err) {
       toast.error(err.message);
+      return;
     }
+
+    setArchivos(porArchivo);
+    setResultado({ validas, errores, total, omitidas, desglose });
+    setFase(FASES.VALIDACION);
   }
 
-  function handleFileInput(e) { procesarArchivo(e.target.files?.[0]); }
+  function handleFileInput(e) { procesarArchivos(e.target.files); }
   function handleDrop(e) {
     e.preventDefault(); setDragOver(false);
-    procesarArchivo(e.dataTransfer.files?.[0]);
+    procesarArchivos(e.dataTransfer.files);
   }
 
   async function confirmarImportacion() {
@@ -143,6 +181,35 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
     } catch (err) {
       toast.error('Error al importar: ' + err.message);
       setFase(FASES.VALIDACION);
+    }
+  }
+
+  // Mueve una clase existente (la que choca) a otro laboratorio, ahora mismo,
+  // y vuelve a analizar contra el import para que el conflicto desaparezca
+  // de la lista si ya no aplica.
+  async function moverClaseExistente(claseExistente, nuevoLabId) {
+    if (!nuevoLabId || nuevoLabId === claseExistente.labId) return;
+    setGuardandoMover(true);
+    try {
+      await actualizarClase(claseExistente.id, { labId: nuevoLabId, modulos: [] });
+      toast.success(`${claseExistente.nombreAsignatura} movida a ${labs.find(l => l.id === nuevoLabId)?.nombre || nuevoLabId}`);
+      setMoviendoClaseId(null);
+      setLabDestinoMover('');
+      const a = await analizarImport(ciclo.id, resultado.validas);
+      setAnalisis(a);
+      // Conserva decisiones ya tomadas; los conflictos nuevos entran en 'omitir' por defecto
+      setDecisions(prev => {
+        const next = {};
+        a.conflictos.forEach(c => {
+          const key = IDENTITY_KEY(c.claseImportada);
+          next[key] = prev[key] || 'omitir';
+        });
+        return next;
+      });
+    } catch (err) {
+      toast.error('Error al mover la clase: ' + err.message);
+    } finally {
+      setGuardandoMover(false);
     }
   }
 
@@ -210,23 +277,41 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
                 onClick={() => inputRef.current?.click()}
               >
                 <Upload size={36} className="mx-auto text-gray-400 mb-3" />
-                <p className="text-sm font-medium text-gray-700">Arrastra tu archivo Excel aquí, o haz clic para seleccionar</p>
+                <p className="text-sm font-medium text-gray-700">Arrastra tus archivos Excel aquí, o haz clic para seleccionar</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Puedes seleccionar varios a la vez — se fusionan en un solo análisis (útil si un laboratorio aparece en más de un reporte)
+                </p>
                 <p className="text-xs text-gray-500 mt-1">
                   {FORMATOS.find(f => f.id === formato)?.hint}
                 </p>
               </button>
-              <input ref={inputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileInput} />
+              <input ref={inputRef} type="file" accept=".xlsx" multiple className="hidden" onChange={handleFileInput} />
             </div>
           )}
 
           {/* ── VALIDACION ── */}
           {fase === FASES.VALIDACION && resultado && (() => {
-            const pendientesCount = resultado.validas.filter(v => v.pendienteRevision).length;
+            const pendientesDocenteCount = resultado.validas.filter(v => v.motivosRevision?.includes('docente')).length;
+            const pendientesModuloCount = resultado.validas.filter(v => v.motivosRevision?.includes('modulo')).length;
             return (
             <div className="space-y-4">
-              <p className="text-sm text-gray-500">
-                Archivo: <span className="font-medium text-gray-700">{archivoNombre}</span>
-              </p>
+              <div className="text-sm text-gray-500">
+                {archivos.length === 1 ? (
+                  <p>Archivo: <span className="font-medium text-gray-700">{archivos[0].nombre}</span></p>
+                ) : (
+                  <>
+                    <p className="mb-1">{archivos.length} archivos fusionados en un solo análisis:</p>
+                    <ul className="space-y-0.5">
+                      {archivos.map(a => (
+                        <li key={a.nombre} className="flex justify-between gap-2 text-xs">
+                          <span className="truncate font-medium text-gray-700">{a.nombre}</span>
+                          <span className="text-gray-400 shrink-0">{a.validas} válidas{a.errores > 0 ? `, ${a.errores} con error` : ''}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
 
               {/* Contadores */}
               <div className="grid grid-cols-3 gap-3 text-center">
@@ -247,19 +332,21 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
               </div>
 
               {/* Banner de filas omitidas (solo formato UTEC) */}
-              {resultado.omitidas > 0 && (
-                <div className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-600">
-                  <span className="text-gray-400 mt-0.5 shrink-0">ⓘ</span>
-                  <p>
-                    Se omitieron <strong>{resultado.omitidas}</strong> {resultado.omitidas === 1 ? 'fila' : 'filas'} que no aplican al sistema de laboratorios
-                    {resultado.desglose?.virtuales > 0 && ` (${resultado.desglose.virtuales} virtuales/en línea`}
-                    {resultado.desglose?.cerradas > 0 && resultado.desglose?.virtuales > 0 && `, ${resultado.desglose.cerradas} cerradas)`}
-                    {resultado.desglose?.cerradas > 0 && !resultado.desglose?.virtuales && ` (${resultado.desglose.cerradas} cerradas)`}
-                    {resultado.desglose?.virtuales > 0 && !resultado.desglose?.cerradas && ')'}
-                    .
-                  </p>
-                </div>
-              )}
+              {resultado.omitidas > 0 && (() => {
+                const partes = [];
+                if (resultado.desglose?.aulasRegulares > 0) partes.push(`${resultado.desglose.aulasRegulares} en aulas/talleres que no son laboratorio`);
+                if (resultado.desglose?.virtuales > 0) partes.push(`${resultado.desglose.virtuales} virtuales/en línea`);
+                if (resultado.desglose?.canceladas > 0) partes.push(`${resultado.desglose.canceladas} canceladas`);
+                return (
+                  <div className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-600">
+                    <span className="text-gray-400 mt-0.5 shrink-0">ⓘ</span>
+                    <p>
+                      Se omitieron <strong>{resultado.omitidas}</strong> {resultado.omitidas === 1 ? 'fila' : 'filas'} que no aplican al sistema de laboratorios
+                      {partes.length > 0 && ` (${partes.join(', ')})`}.
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Errores */}
               {resultado.errores.length > 0 && (
@@ -278,7 +365,7 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
                     <div className="max-h-48 overflow-y-auto divide-y divide-red-100">
                       {resultado.errores.map((e, i) => (
                         <div key={i} className="px-4 py-2 text-xs">
-                          <p className="font-medium text-gray-700">Fila {e.fila} — {e.referencia}</p>
+                          <p className="font-medium text-gray-700">{e.archivo ? `${e.archivo} — ` : ''}Fila {e.fila} — {e.referencia}</p>
                           <ul className="mt-1 list-disc list-inside text-red-600 space-y-0.5">
                             {e.errores.map((msg, j) => <li key={j}>{msg}</li>)}
                           </ul>
@@ -313,22 +400,31 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {resultado.validas.map((c, i) => (
+                          {resultado.validas.map((c, i) => {
+                            const revisarDocente = c.motivosRevision?.includes('docente');
+                            const revisarModulo = c.motivosRevision?.includes('modulo');
+                            return (
                             <tr key={i} className="hover:bg-gray-50">
-                              <td className="px-3 py-1.5 whitespace-nowrap text-gray-700 font-mono">{c.labId}</td>
+                              <td
+                                className={`px-3 py-1.5 whitespace-nowrap font-mono ${revisarModulo ? 'text-amber-600 font-semibold' : 'text-gray-700'}`}
+                                title={revisarModulo ? c.observaciones : undefined}
+                              >
+                                {c.labId}{revisarModulo ? ' ⚠' : ''}
+                              </td>
                               <td className="px-3 py-1.5 whitespace-nowrap text-gray-700 font-medium">{c.codigoAsignatura}</td>
                               <td className="px-3 py-1.5 text-gray-700 max-w-[180px] truncate" title={c.nombreAsignatura}>{c.nombreAsignatura}</td>
                               <td className="px-3 py-1.5 whitespace-nowrap text-gray-700">{c.seccion}</td>
                               <td
-                                className={`px-3 py-1.5 max-w-[120px] truncate font-medium ${c.pendienteRevision ? 'text-amber-600' : 'text-gray-600'}`}
-                                title={c.pendienteRevision ? 'Sin docente — pendiente de revisión' : c.docente}
+                                className={`px-3 py-1.5 max-w-[120px] truncate font-medium ${revisarDocente ? 'text-amber-600' : 'text-gray-600'}`}
+                                title={revisarDocente ? 'Sin docente — pendiente de revisión' : c.docente}
                               >
-                                {c.pendienteRevision ? '⚠ REVISAR' : c.docente}
+                                {revisarDocente ? '⚠ REVISAR' : c.docente}
                               </td>
                               <td className="px-3 py-1.5 whitespace-nowrap font-mono text-gray-700">{fmtDias(c.diasSemana)}</td>
                               <td className="px-3 py-1.5 whitespace-nowrap text-gray-700">{c.horaInicio}–{c.horaFin}</td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -349,11 +445,21 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
               )}
 
               {/* Banner de clases pendientes de revisión */}
-              {pendientesCount > 0 && (
+              {pendientesDocenteCount > 0 && (
                 <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
                   <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
                   <p>
-                    <strong>{pendientesCount} {pendientesCount === 1 ? 'clase sin docente' : 'clases sin docente'}</strong> — se importarán marcadas como "⚠ REVISAR". El encargado podrá completar el nombre al editar cada clase desde la matriz.
+                    <strong>{pendientesDocenteCount} {pendientesDocenteCount === 1 ? 'clase sin docente' : 'clases sin docente'}</strong> — se importarán marcadas como "⚠ REVISAR". El encargado podrá completar el nombre al editar cada clase desde la matriz.
+                  </p>
+                </div>
+              )}
+
+              {/* Banner de módulos de Lab 03 sin confirmar */}
+              {pendientesModuloCount > 0 && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+                  <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
+                  <p>
+                    <strong>{pendientesModuloCount} {pendientesModuloCount === 1 ? 'clase de Lab 03' : 'clases de Lab 03'}</strong> sin módulo especificado en el reporte — se importarán sin módulo asignado y con una sugerencia en observaciones. El encargado debe confirmar el módulo (M1–M4) al editar cada clase.
                   </p>
                 </div>
               )}
@@ -364,10 +470,10 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
 
               <div className="flex justify-between gap-3 pt-2">
                 <button
-                  onClick={() => { setFase(FASES.UPLOAD); setResultado(null); setPrevistaAbierta(false); setErroresExpandidos(false); }}
+                  onClick={() => { setFase(FASES.UPLOAD); setResultado(null); setArchivos([]); setPrevistaAbierta(false); setErroresExpandidos(false); }}
                   className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
                 >
-                  Cambiar archivo
+                  Cambiar archivos
                 </button>
                 <button
                   onClick={confirmarImportacion}
@@ -443,9 +549,46 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
                         <div className="px-4 py-2 bg-red-50/50 border-b border-gray-200">
                           <p className="text-xs font-medium text-red-700 mb-1">Choca con {group.conflictosCon.length === 1 ? 'esta clase existente' : `estas ${group.conflictosCon.length} clases existentes`}:</p>
                           {group.conflictosCon.map((ce, i) => (
-                            <div key={i} className="text-xs text-red-600 py-0.5 flex items-start gap-1.5">
-                              <ArrowRight size={11} className="mt-0.5 shrink-0" />
-                              <span><strong>{ce.nombreAsignatura}</strong> Sec. {ce.seccion} · {fmtDiasLargo(ce.diasSemana)} · {ce.horaInicio}–{ce.horaFin}</span>
+                            <div key={i} className="py-1">
+                              <div className="text-xs text-red-600 flex items-start gap-1.5">
+                                <ArrowRight size={11} className="mt-0.5 shrink-0" />
+                                <span className="flex-1"><strong>{ce.nombreAsignatura}</strong> Sec. {ce.seccion} · {fmtDiasLargo(ce.diasSemana)} · {ce.horaInicio}–{ce.horaFin}</span>
+                              </div>
+                              {moviendoClaseId === ce.id ? (
+                                <div className="flex items-center gap-1.5 mt-1.5 ml-[18px]">
+                                  <select
+                                    value={labDestinoMover}
+                                    onChange={e => setLabDestinoMover(e.target.value)}
+                                    className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
+                                    autoFocus
+                                  >
+                                    <option value="">Elegir laboratorio…</option>
+                                    {labs.filter(l => l.id !== ce.labId).map(l => (
+                                      <option key={l.id} value={l.id}>{l.nombre}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    onClick={() => moverClaseExistente(ce, labDestinoMover)}
+                                    disabled={!labDestinoMover || guardandoMover}
+                                    className="px-2 py-1 text-xs font-semibold text-white bg-utec-primary rounded-lg hover:bg-utec-dark disabled:opacity-40"
+                                  >
+                                    {guardandoMover ? 'Moviendo…' : 'Confirmar'}
+                                  </button>
+                                  <button
+                                    onClick={() => { setMoviendoClaseId(null); setLabDestinoMover(''); }}
+                                    className="p-1 text-gray-400 hover:text-gray-600"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => { setMoviendoClaseId(ce.id); setLabDestinoMover(''); }}
+                                  className="flex items-center gap-1 mt-1 ml-[18px] text-[11px] font-medium text-utec-primary hover:underline"
+                                >
+                                  <ArrowRightLeft size={10} /> Mover esta clase a otro lab para liberar el conflicto
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -542,7 +685,7 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
                 <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800 text-left">
                   <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
                   <p>
-                    <strong>{resultado.validas.filter(v => v.pendienteRevision).length} clases</strong> quedaron sin docente asignado. El encargado las verá marcadas con "⚠ REVISAR" al editar la clase en la matriz.
+                    <strong>{resultado.validas.filter(v => v.pendienteRevision).length} clases</strong> quedaron pendientes de revisión (docente y/o módulo de Lab 03 sin especificar). El encargado las verá marcadas al editar la clase en la matriz.
                   </p>
                 </div>
               )}

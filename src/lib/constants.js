@@ -113,25 +113,25 @@ export const MESES = [
   { num: 12, id: 'diciembre', label: 'Diciembre' },
 ];
 
+// Horario operativo de laboratorios. Se extendió el cierre de 20:00 a 20:30
+// porque hay secciones reales (18:40-20:10) que terminan después de las 20:00.
+export const HORA_INICIO_DIA = '06:30';
+export const HORA_FIN_DIA = '20:30';
+export const SLOT_MINUTOS = 30;
+
 export const FRANJAS_HORARIAS = (() => {
+  const toMin = hhmm => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+  const toHHMM = min => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+  const inicio = toMin(HORA_INICIO_DIA);
+  const fin = toMin(HORA_FIN_DIA);
   const franjas = [];
-  let h = 6, m = 30;
-  while (h < 20 || (h === 20 && m === 0)) {
-    const hora = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    const sigM = m + 30;
-    const sigH = sigM >= 60 ? h + 1 : h;
-    const sigMin = sigM >= 60 ? sigM - 60 : sigM;
-    const horaFin = `${String(sigH).padStart(2, '0')}:${String(sigMin).padStart(2, '0')}`;
+  for (let m = inicio; m + SLOT_MINUTOS <= fin; m += SLOT_MINUTOS) {
+    const hora = toHHMM(m);
+    const horaFin = toHHMM(m + SLOT_MINUTOS);
     franjas.push({ inicio: hora, fin: horaFin, label: `${hora}-${horaFin}` });
-    m += 30;
-    if (m >= 60) { h++; m = 0; }
   }
   return franjas;
 })();
-
-export const HORA_INICIO_DIA = '06:30';
-export const HORA_FIN_DIA = '20:00';
-export const SLOT_MINUTOS = 30;
 
 export const COLECCIONES = {
   USUARIOS: 'usuarios',
@@ -151,7 +151,7 @@ export const MODULOS_LAB_03 = [
   { id: 'm4', nombre: 'Módulo 4', corto: 'M4', pcInicio: 100, pcFin: 125, equipos: 26 },
 ];
 
-export const LABS_INICIALES = Array.from({ length: 14 }, (_, i) => {
+export const LABS_INICIALES = Array.from({ length: 15 }, (_, i) => {
   const numero = i + 1;
   const id = `lab_${String(numero).padStart(2, '0')}`;
   const tieneModulos = numero === 3;

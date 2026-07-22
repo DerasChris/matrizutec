@@ -1,5 +1,21 @@
 import * as XLSX from 'xlsx';
 
+// Los reportes institucionales UTEC exportan HTML y las tildes/ñ llegan como
+// entidades (&#243; en vez de ó). Se decodifican antes de leer encabezados o
+// valores; si no, columnas como "Sección" no calzan con ningún alias.
+function decodeHtmlEntities(valor) {
+  const s = String(valor ?? '');
+  if (!s.includes('&')) return s;
+  return s
+    .replace(/&#(\d+);/g, (_, cod) => String.fromCharCode(Number(cod)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'");
+}
+
 // Mapeo de nombres alternativos de columna → nombre canónico del template
 const COL_ALIASES = {
   Lab:                  ['lab', 'laboratorio', 'lab_id', 'id_lab', 'id lab', 'nro_lab', 'numero_lab'],
@@ -27,8 +43,9 @@ for (const [canonical, aliases] of Object.entries(COL_ALIASES)) {
 function normalizarColumnas(rawRow) {
   const out = {};
   for (const [key, val] of Object.entries(rawRow)) {
-    const canon = ALIAS_LOOKUP[String(key).trim().toLowerCase()] ?? String(key).trim();
-    out[canon] = val;
+    const keyDecoded = decodeHtmlEntities(key).trim();
+    const canon = ALIAS_LOOKUP[keyDecoded.toLowerCase()] ?? keyDecoded;
+    out[canon] = typeof val === 'string' ? decodeHtmlEntities(val) : val;
   }
   return out;
 }
@@ -36,10 +53,10 @@ function normalizarColumnas(rawRow) {
 const DIAS_VALIDOS = new Set(['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']);
 const MODULOS_VALIDOS = new Set(['m1', 'm2', 'm3', 'm4']);
 const LABS_VALIDOS = new Set(
-  Array.from({ length: 14 }, (_, i) => `lab_${String(i + 1).padStart(2, '0')}`)
+  Array.from({ length: 15 }, (_, i) => `lab_${String(i + 1).padStart(2, '0')}`)
 );
 const MIN_MINUTOS = 6 * 60 + 30;  // 06:30
-const MAX_MINUTOS = 20 * 60;       // 20:00
+const MAX_MINUTOS = 20 * 60 + 30; // 20:30 — hay secciones reales que cierran 18:40-20:10
 
 function horaAMinutos(hora) {
   const [h, m] = hora.split(':').map(Number);
@@ -113,7 +130,7 @@ function validarFila(f) {
   if (!hfValida) {
     errores.push('Hora_Fin inválida — use formato HH:MM');
   } else if (horaAMinutos(f.horaFin) > MAX_MINUTOS) {
-    errores.push('Hora_Fin no puede ser después de 20:00');
+    errores.push('Hora_Fin no puede ser después de 20:30');
   }
 
   if (hiValida && hfValida && horaAMinutos(f.horaFin) <= horaAMinutos(f.horaInicio)) {
@@ -239,17 +256,26 @@ function parsearHoraRangoUTEC(valor) {
   return { horaInicio: pad(match[1]), horaFin: pad(match[2]) };
 }
 
+// Extrae el laboratorio (y opcionalmente el módulo, si viene explícito como
+// "LAB.3.1" o "LAB 3-1") desde el texto de aula del reporte UTEC. El edificio
+// (BJ-, SB-, FM-, GG-...) es variable y se ignora; lo relevante es "LAB.N".
 function parsearLabDesdeAula(valor) {
-  if (!valor) return '';
-  const match = String(valor).trim().match(/LAB[.\s-]*(\d+)/i);
-  if (match) return `lab_${String(parseInt(match[1], 10)).padStart(2, '0')}`;
-  const numSolo = String(valor).trim().match(/^(\d{1,2})$/);
-  if (numSolo) return `lab_${String(parseInt(numSolo[1], 10)).padStart(2, '0')}`;
-  return String(valor).trim().toLowerCase();
+  if (!valor) return { labId: '', modulo: null };
+  const texto = String(valor).trim();
+  const match = texto.match(/LAB[.\s-]*(\d+)(?:[.\s-]+(\d+))?/i);
+  if (match) {
+    const labId = `lab_${String(parseInt(match[1], 10)).padStart(2, '0')}`;
+    const modulo = match[2] ? Number(match[2]) : null;
+    return { labId, modulo };
+  }
+  const numSolo = texto.match(/^(\d{1,2})$/);
+  if (numSolo) return { labId: `lab_${String(parseInt(numSolo[1], 10)).padStart(2, '0')}`, modulo: null };
+  return { labId: texto.toLowerCase(), modulo: null };
 }
 
-// Aulas que no corresponden a laboratorios físicos — se omiten sin reportar error
-function esAulaOmitible(valor) {
+// Aulas virtuales/en línea o sin dato — no corresponden a un espacio físico,
+// se omiten sin reportar error.
+function esAulaVirtualOVacia(valor) {
   const s = String(valor ?? '').trim().toUpperCase();
   return (
     s === '' ||
@@ -258,6 +284,46 @@ function esAulaOmitible(valor) {
     s.includes('EN LÍNEA') ||
     s.includes('EN LíNEA')
   );
+}
+
+// Aulas regulares (salones, talleres, auditorios) que no son uno de los
+// laboratorios que administra el sistema. El reporte UTEC mezcla ambos tipos
+// de espacio en la misma columna. El marcador confiable es "LAB" seguido de
+// un número — espacios con nombre propio en vez de número (p. ej. un aula
+// bautizada "LAB.GÉNIUS") no son uno de los laboratorios numerados del
+// sistema y se tratan igual que un aula regular.
+function esAulaRegularNoLaboratorio(valor) {
+  return !/LAB[.\s-]*\d+/i.test(String(valor ?? ''));
+}
+
+// Capacidad física de cada módulo del Lab 03 (confirmado por el usuario).
+// Sirve solo para sugerir módulo cuando el reporte no lo especifica — nunca
+// se asigna en automático porque M2 y M3 comparten capacidad y son
+// indistinguibles solo con el número de inscritos.
+const MODULOS_CAPACIDAD_LAB03 = { m1: 27, m2: 36, m3: 36, m4: 26 };
+
+function sugerirModulosLab03(inscritos) {
+  const entradas = Object.entries(MODULOS_CAPACIDAD_LAB03);
+  const n = Number(inscritos) || 0;
+  if (n <= 0) return null;
+
+  // Combinación exacta con un solo módulo, sin ambigüedad de capacidad.
+  const unico = entradas.filter(([, cap]) => cap === n);
+  if (unico.length === 1) return [unico[0][0]];
+
+  // Mejor combinación (menor exceso) entre 1 y 4 módulos.
+  let mejor = null;
+  const totalCombos = 1 << entradas.length;
+  for (let mask = 1; mask < totalCombos; mask++) {
+    const combo = entradas.filter((_, i) => mask & (1 << i));
+    const suma = combo.reduce((s, [, cap]) => s + cap, 0);
+    if (suma < n) continue;
+    const exceso = suma - n;
+    if (!mejor || exceso < mejor.exceso) mejor = { combo, exceso, empatado: false };
+    else if (mejor && exceso === mejor.exceso) mejor.empatado = true;
+  }
+  if (!mejor || mejor.empatado) return null; // ambiguo — requiere revisión manual
+  return mejor.combo.map(([m]) => m);
 }
 
 export function parsearExcelUTEC(buffer, cicloId) {
@@ -271,7 +337,9 @@ export function parsearExcelUTEC(buffer, cicloId) {
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) throw new Error('El archivo no tiene hojas.');
 
-  const rawAll = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  const rawAll = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }).map(
+    row => row.map(cell => (typeof cell === 'string' ? decodeHtmlEntities(cell) : cell))
+  );
 
   // Detectar fila de encabezados (primeras 15 filas)
   let headerIdx = -1;
@@ -312,9 +380,10 @@ export function parsearExcelUTEC(buffer, cicloId) {
   const dataRows = rawAll.slice(headerIdx + 1);
   const validas = [];
   const errores = [];
-  let libresCount = 0;
-  let cerradas   = 0;
-  let virtuales  = 0;
+  let libresCount   = 0;
+  let canceladas    = 0;
+  let virtuales     = 0;
+  let aulasRegulares = 0;
 
   dataRows.forEach((row, i) => {
     const filaNro = headerIdx + 2 + i;
@@ -332,30 +401,42 @@ export function parsearExcelUTEC(buffer, cicloId) {
 
     if (!rawNombre) return;
 
-    // Filas cerradas / canceladas — omitir sin error
-    if (['cerrado', 'cerrada', 'cancelado', 'cancelada', 'inactivo'].includes(rawEstado)) {
-      cerradas++;
+    // Filas realmente canceladas — omitir sin error.
+    // OJO: "Cerrado" en el reporte UTEC significa cupos cerrados (sección
+    // llena, Disponible=0), NO clase cancelada — confirmado con datos
+    // reales donde el 100% de las filas "Cerrado" tienen cupo lleno.
+    // Esas SÍ deben importarse; solo se omiten cancelaciones reales.
+    if (['cancelado', 'cancelada', 'inactivo'].includes(rawEstado)) {
+      canceladas++;
       return;
     }
 
     // Aulas virtuales / en línea — omitir sin error
-    if (esAulaOmitible(rawAula)) {
+    if (esAulaVirtualOVacia(rawAula)) {
       virtuales++;
       return;
     }
 
+    // Aulas regulares (salones, talleres, auditorios) — no son uno de los
+    // laboratorios del sistema, se omiten sin reportar error.
+    if (esAulaRegularNoLaboratorio(rawAula)) {
+      aulasRegulares++;
+      return;
+    }
+
     const codigo = rawCodigo || (() => { libresCount++; return `LIBRE-${String(libresCount).padStart(2, '0')}`; })();
-    const labId  = parsearLabDesdeAula(rawAula);
+    const { labId, modulo } = parsearLabDesdeAula(rawAula);
     const horas  = parsearHoraRangoUTEC(rawHora);
     const dias   = parsearDiasUTEC(rawDias);
+    const inscritosNum = rawInscritos !== '' ? Number(rawInscritos) : 0;
 
     const errs = [];
-    if (!LABS_VALIDOS.has(labId)) errs.push(`Aula no reconocida como laboratorio: "${rawAula}"`);
+    if (!LABS_VALIDOS.has(labId)) errs.push(`Laboratorio no reconocido (no está entre los 14 configurados): "${rawAula}"`);
     if (!horas) {
       errs.push(`Hora inválida: "${rawHora}" — use formato HH:MM-HH:MM`);
     } else {
       if (horaAMinutos(horas.horaInicio) < MIN_MINUTOS) errs.push('Hora inicio antes de 06:30');
-      if (horaAMinutos(horas.horaFin) > MAX_MINUTOS)   errs.push('Hora fin después de 20:00');
+      if (horaAMinutos(horas.horaFin) > MAX_MINUTOS)   errs.push('Hora fin después de 20:30');
       if (horaAMinutos(horas.horaFin) <= horaAMinutos(horas.horaInicio))
         errs.push('Hora fin debe ser mayor que hora inicio');
     }
@@ -364,6 +445,28 @@ export function parsearExcelUTEC(buffer, cicloId) {
     if (errs.length > 0) {
       errores.push({ fila: filaNro, referencia: rawCodigo || rawNombre, errores: errs });
     } else {
+      // Lab 03 tiene 4 módulos físicos; el reporte UTEC casi nunca indica
+      // cuál usa cada sección. Si no viene explícito en el Aula, se sugiere
+      // en observaciones a partir de los inscritos, pero nunca se asigna
+      // automáticamente: queda pendiente de confirmación manual.
+      const motivos = [];
+      let modulos = [];
+      let observaciones = '';
+
+      if (labId === 'lab_03') {
+        if (modulo && MODULOS_VALIDOS.has(`m${modulo}`)) {
+          modulos = [`m${modulo}`];
+        } else {
+          motivos.push('modulo');
+          const sugerido = sugerirModulosLab03(inscritosNum);
+          observaciones = sugerido
+            ? `Lab 03 sin módulo especificado en el reporte. Inscritos: ${inscritosNum} — sugerido: ${sugerido.join('+').toUpperCase()} (confirmar).`
+            : `Lab 03 sin módulo especificado en el reporte. Inscritos: ${inscritosNum} — no se pudo sugerir un módulo sin ambigüedad, asignar manualmente.`;
+        }
+      }
+
+      if (!rawDocente) motivos.push('docente');
+
       validas.push({
         cicloId,
         labId,
@@ -372,12 +475,14 @@ export function parsearExcelUTEC(buffer, cicloId) {
         nombreAsignatura: rawNombre,
         seccion: rawSeccion || '1',
         docente: rawDocente || 'REVISAR',
-        pendienteRevision: !rawDocente,
+        pendienteRevision: motivos.length > 0,
+        motivosRevision: motivos,
         diasSemana: dias,
         horaInicio: horas.horaInicio,
         horaFin: horas.horaFin,
-        modulos: [],
-        inscritos: rawInscritos !== '' ? Number(rawInscritos) : 0,
+        modulos,
+        observaciones,
+        inscritos: inscritosNum,
         activo: true,
       });
     }
@@ -388,7 +493,7 @@ export function parsearExcelUTEC(buffer, cicloId) {
     validas,
     errores,
     total: noVacias.length,
-    omitidas: cerradas + virtuales,
-    desglose: { cerradas, virtuales },
+    omitidas: canceladas + virtuales + aulasRegulares,
+    desglose: { canceladas, virtuales, aulasRegulares },
   };
 }

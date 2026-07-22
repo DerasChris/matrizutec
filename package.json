@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:onpremise": "vite build --mode onpremise && node scripts/prepare-onpremise.mjs",
     "preview": "vite preview",
+    "preview:onpremise": "vite preview --mode onpremise",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "deploy": "npm run build && firebase deploy"
   },

@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
+import { ChevronDown, Loader2, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import useReloj from '../hooks/useReloj';
 import {
   obtenerLaboratorios,
   obtenerCicloActivo,
-  obtenerClasesDelLabHoy,
-  obtenerReservasAprobadasDelLabHoy,
+  obtenerClasesDeHoyTodosLosLabs,
+  obtenerReservasAprobadasDeHoyTodosLosLabs,
 } from '../services/laboratoriosService';
 import {
   getDiaSemanaActual,
@@ -15,62 +16,26 @@ import {
   fechaActualISO,
   estaEnRango,
 } from '../utils/dateHelpers';
-import SelectorLab from '../components/dashboard/SelectorLab';
 import EstadoActual from '../components/dashboard/EstadoActual';
 import AgendaDelDia from '../components/dashboard/AgendaDelDia';
-import { sembrarLaboratorios, sembrarCicloActual } from '../utils/seedData';
-import { sembrarClasesDemo, eliminarClasesDemo } from '../utils/seedDemoData';
-import { ROLES } from '../lib/constants';
-import {
-  Loader2, RefreshCw, Database, AlertTriangle, FlaskConical,
-  Settings, ChevronDown, ChevronUp,
-} from 'lucide-react';
 
-const LAB_LAT = 13.701234;
-const LAB_LNG = -89.224567;
-const RADIO_METROS = 50;
-
-function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const rad = Math.PI / 180;
-  const dLat = (lat2 - lat1) * rad;
-  const dLon = (lon2 - lon1) * rad;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function verificarUbicacion() {
-  if (!navigator.geolocation) { alert('Este navegador no soporta geolocalización'); return; }
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const dist = calcularDistanciaMetros(pos.coords.latitude, pos.coords.longitude, LAB_LAT, LAB_LNG);
-      alert(dist <= RADIO_METROS ? 'Estás dentro del laboratorio.' : 'Estás fuera del área permitida.');
-    },
-    () => alert('No se pudo obtener la ubicación.'),
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-  );
-}
-
+// Disponibilidad de todos los laboratorios de un vistazo. Visible para
+// cualquier rol sin restricción — a diferencia de la Matriz, que sí se
+// limita a los labs asignados de cada encargado.
 export default function Dashboard() {
-  const { perfil, esAdmin } = useAuth();
+  const { perfil } = useAuth();
   const ahora = useReloj();
 
   const [labs, setLabs] = useState([]);
-  const [labSeleccionado, setLabSeleccionado] = useState(null);
   const [ciclo, setCiclo] = useState(null);
-  const [clases, setClases] = useState([]);
-  const [reservas, setReservas] = useState([]);
+  const [clasesHoy, setClasesHoy] = useState([]);
+  const [reservasHoy, setReservasHoy] = useState([]);
   const [cargando, setCargando] = useState(true);
-  const [cargandoLab, setCargandoLab] = useState(false);
-  const [setupAbierto, setSetupAbierto] = useState(false);
+  const [cargandoAgenda, setCargandoAgenda] = useState(false);
+  const [labExpandido, setLabExpandido] = useState(null);
 
   useEffect(() => { cargarInicial(); }, []);
-
-  useEffect(() => {
-    if (labSeleccionado && ciclo) cargarDatosLab(labSeleccionado.id);
-  }, [labSeleccionado, ciclo, ahora.toDateString()]);
+  useEffect(() => { if (ciclo) cargarAgendaHoy(); }, [ciclo, ahora.toDateString()]);
 
   async function cargarInicial() {
     try {
@@ -79,19 +44,10 @@ export default function Dashboard() {
         obtenerLaboratorios(),
         obtenerCicloActivo(),
       ]);
-
-      // Encargados solo ven sus labs asignados
-      const labsFiltrados =
-        perfil?.rol === ROLES.ENCARGADO &&
-        Array.isArray(perfil?.labsAsignados) &&
-        perfil.labsAsignados.length > 0
-          ? labsData.filter(l => perfil.labsAsignados.includes(l.id))
-          : labsData;
-
-      setLabs(labsFiltrados);
+      setLabs(labsData);
       setCiclo(cicloData);
-      if (labsFiltrados.length > 0) setLabSeleccionado(labsFiltrados[0]);
-      if (labsFiltrados.length === 0 || !cicloData) setSetupAbierto(true);
+      if (labsData.length === 0) toast.error('No hay laboratorios configurados. Contacta al desarrollador.');
+      if (!cicloData) toast.error('No hay un ciclo activo. Contacta al desarrollador.');
     } catch (e) {
       console.error(e);
       toast.error('Error al cargar datos. Verifica las reglas de Firestore.');
@@ -100,63 +56,39 @@ export default function Dashboard() {
     }
   }
 
-  async function cargarDatosLab(labId) {
+  async function cargarAgendaHoy() {
     if (!ciclo) return;
     try {
-      setCargandoLab(true);
+      setCargandoAgenda(true);
       const dia = getDiaSemanaActual();
       const fecha = fechaActualISO();
       const [clasesData, reservasData] = await Promise.all([
-        obtenerClasesDelLabHoy(labId, dia.id, ciclo.id),
-        obtenerReservasAprobadasDelLabHoy(labId, fecha),
+        obtenerClasesDeHoyTodosLosLabs(ciclo.id, dia.id),
+        obtenerReservasAprobadasDeHoyTodosLosLabs(fecha),
       ]);
-      setClases(clasesData);
-      setReservas(reservasData);
+      setClasesHoy(clasesData);
+      setReservasHoy(reservasData);
     } catch (e) {
       console.error(e);
       toast.error('Error al cargar la agenda');
     } finally {
-      setCargandoLab(false);
+      setCargandoAgenda(false);
     }
   }
 
   const horaAhora = horaActualString();
-  const claseActiva = clases.find(c => estaEnRango(horaAhora, c.horaInicio, c.horaFin));
-  const reservaActiva = reservas.find(r => estaEnRango(horaAhora, r.horaInicio, r.horaFin));
 
-  async function handleSembrarBase() {
-    try {
-      const t = toast.loading('Sembrando datos base...');
-      const [labsRes, cicloRes] = await Promise.all([sembrarLaboratorios(), sembrarCicloActual()]);
-      toast.dismiss(t);
-      const partes = [];
-      if (labsRes.creados) partes.push(`${labsRes.creados} labs creados`);
-      if (labsRes.actualizados) partes.push(`${labsRes.actualizados} labs actualizados`);
-      if (cicloRes.creado) partes.push('ciclo creado'); else partes.push('ciclo ya existía');
-      toast.success(partes.join(' · '));
-      await cargarInicial();
-    } catch (e) { toast.error('Error al sembrar datos base'); }
-  }
+  const labsConEstado = useMemo(() => {
+    return labs.map(lab => {
+      const clasesLab = clasesHoy.filter(c => c.labId === lab.id);
+      const reservasLab = reservasHoy.filter(r => r.labId === lab.id);
+      const claseActiva = clasesLab.find(c => estaEnRango(horaAhora, c.horaInicio, c.horaFin));
+      const reservaActiva = reservasLab.find(r => estaEnRango(horaAhora, r.horaInicio, r.horaFin));
+      return { lab, clasesLab, reservasLab, claseActiva, reservaActiva };
+    });
+  }, [labs, clasesHoy, reservasHoy, horaAhora]);
 
-  async function handleSembrarDemo() {
-    if (!ciclo) { toast.error('Primero debes crear el ciclo'); return; }
-    try {
-      const t = toast.loading('Sembrando clases demo...');
-      const res = await sembrarClasesDemo(ciclo.id);
-      toast.dismiss(t);
-      toast.success(`${res.creadas} clases demo creadas`);
-      if (labSeleccionado) cargarDatosLab(labSeleccionado.id);
-    } catch (e) { toast.error('Error al sembrar clases demo'); }
-  }
-
-  async function handleEliminarDemo() {
-    if (!confirm('¿Eliminar todas las clases marcadas como demo?')) return;
-    try {
-      const res = await eliminarClasesDemo();
-      toast.success(`${res.eliminadas} clases demo eliminadas`);
-      if (labSeleccionado) cargarDatosLab(labSeleccionado.id);
-    } catch (e) { toast.error('Error al eliminar clases demo'); }
-  }
+  const libresCount = labsConEstado.filter(l => !l.claseActiva && !l.reservaActiva).length;
 
   if (cargando) {
     return (
@@ -166,36 +98,6 @@ export default function Dashboard() {
       </div>
     );
   }
-
-  const necesitaSetup = labs.length === 0 || !ciclo;
-
-  // Contenido del lab seleccionado (compartido entre mobile y desktop)
-  const contenidoLab = labSeleccionado ? (
-    cargandoLab ? (
-      <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-        <Loader2 className="w-8 h-8 text-utec-primary animate-spin mx-auto mb-2" />
-        <p className="text-gray-600 text-sm">Cargando agenda...</p>
-      </div>
-    ) : (
-      <div className="space-y-4">
-        <EstadoActual
-          claseActiva={claseActiva}
-          reservaActiva={reservaActiva}
-          horaActual={horaAhora}
-          labNombre={labSeleccionado.nombre}
-        />
-        <AgendaDelDia
-          clases={clases}
-          reservas={reservas}
-          labNombre={labSeleccionado.nombre}
-        />
-      </div>
-    )
-  ) : (
-    <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-      <p className="text-gray-600">Selecciona un laboratorio para ver su estado</p>
-    </div>
-  );
 
   return (
     <div>
@@ -208,149 +110,116 @@ export default function Dashboard() {
             </h1>
             <p className="text-gray-600 text-sm mt-0.5 capitalize">{formatearFechaLarga(ahora)}</p>
           </div>
-          <div className="flex items-center gap-3">
-            {esAdmin() && (
-              <button
-                onClick={() => setSetupAbierto(!setupAbierto)}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
-              >
-                <Settings size={14} />
-                Setup
-                {setupAbierto ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-            )}
-            <div className="text-right">
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Hora actual</p>
-              <p className="text-2xl md:text-3xl font-bold text-utec-primary tabular-nums">{horaAhora}</p>
-            </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Hora actual</p>
+            <p className="text-2xl md:text-3xl font-bold text-utec-primary tabular-nums">{horaAhora}</p>
           </div>
         </div>
       </div>
 
-      {/* ─── Setup panel ─── */}
-      {esAdmin() && setupAbierto && (
-        <div className={`mb-6 border rounded-xl p-4 md:p-5 ${
-          necesitaSetup ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'
-        }`}>
-          <div className="flex items-start gap-3 mb-3">
-            {necesitaSetup
-              ? <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              : <Settings className="w-5 h-5 text-gray-600 flex-shrink-0 mt-0.5" />
-            }
-            <div className="flex-1">
-              <h2 className={`font-semibold text-sm ${necesitaSetup ? 'text-amber-900' : 'text-gray-900'}`}>
-                {necesitaSetup ? 'Configuración inicial requerida' : 'Setup avanzado'}
-              </h2>
-              <p className={`text-xs mt-1 ${necesitaSetup ? 'text-amber-800' : 'text-gray-600'}`}>
-                {necesitaSetup
-                  ? `${labs.length === 0 ? 'No hay laboratorios. ' : ''}${!ciclo ? 'No hay ciclo activo. ' : ''}Usa los botones para inicializar.`
-                  : 'Herramientas de mantenimiento.'}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 pl-8">
-            <button onClick={handleSembrarBase} className="flex items-center gap-2 px-3 py-2 bg-utec-primary text-white text-xs rounded-lg hover:bg-utec-dark">
-              <Database size={13} /> Sembrar labs + ciclo
-            </button>
-            <button onClick={handleSembrarDemo} disabled={!ciclo} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 disabled:opacity-50">
-              <FlaskConical size={13} /> Sembrar demo
-            </button>
-            <button onClick={handleEliminarDemo} className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700">
-              Eliminar demo
-            </button>
-            <button onClick={verificarUbicacion} className="flex items-center gap-2 px-3 py-2 bg-gray-700 text-white text-xs rounded-lg hover:bg-gray-800">
-              Validar ubicación
-            </button>
-          </div>
+      {/* ─── Resumen + actualizar ─── */}
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <p className="text-sm text-gray-600">
+          {labs.length === 0 ? (
+            'Sin laboratorios configurados'
+          ) : (
+            <>
+              <span className="font-semibold text-green-700">{libresCount}</span> de{' '}
+              <span className="font-semibold text-gray-800">{labs.length}</span> laboratorios libres ahora mismo
+            </>
+          )}
+        </p>
+        <button
+          onClick={cargarAgendaHoy}
+          disabled={cargandoAgenda}
+          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-40"
+        >
+          <RefreshCw size={12} className={cargandoAgenda ? 'animate-spin' : ''} />
+          Actualizar
+        </button>
+      </div>
+
+      {/* ─── Acordeón de laboratorios ─── */}
+      {labs.length === 0 ? (
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-500 text-sm">
+          No hay laboratorios disponibles
+        </div>
+      ) : cargandoAgenda && clasesHoy.length === 0 && reservasHoy.length === 0 ? (
+        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
+          <Loader2 className="w-8 h-8 text-utec-primary animate-spin mx-auto mb-2" />
+          <p className="text-gray-600 text-sm">Cargando disponibilidad...</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {labsConEstado.map(({ lab, clasesLab, reservasLab, claseActiva, reservaActiva }) => (
+            <LabAccordionRow
+              key={lab.id}
+              lab={lab}
+              clases={clasesLab}
+              reservas={reservasLab}
+              claseActiva={claseActiva}
+              reservaActiva={reservaActiva}
+              horaActual={horaAhora}
+              expandido={labExpandido === lab.id}
+              onToggle={() => setLabExpandido(id => id === lab.id ? null : lab.id)}
+            />
+          ))}
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* ─── MOBILE: chip bar + contenido ─── */}
-      <div className="lg:hidden space-y-4">
-        {labs.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-500 text-sm">
-            No hay laboratorios disponibles
+function LabAccordionRow({ lab, clases, reservas, claseActiva, reservaActiva, horaActual, expandido, onToggle }) {
+  const ocupado = claseActiva || reservaActiva;
+  const item = claseActiva || reservaActiva;
+  const esReserva = !claseActiva && reservaActiva;
+
+  const estado = !ocupado
+    ? { label: 'LIBRE', dot: 'bg-green-500', badge: 'bg-green-100 text-green-700' }
+    : esReserva
+      ? { label: 'RESERVA', dot: 'bg-orange-500', badge: 'bg-orange-100 text-orange-700' }
+      : { label: 'EN CLASE', dot: 'bg-red-500', badge: 'bg-red-100 text-red-700' };
+
+  const resumen = !ocupado
+    ? 'Disponible ahora'
+    : esReserva
+      ? `${item.asignatura || item.motivo || 'Reserva'} · ${item.horaInicio}–${item.horaFin}`
+      : `${item.codigoAsignatura || ''} ${item.nombreAsignatura || ''}`.trim() + ` · ${item.horaInicio}–${item.horaFin}`;
+
+  return (
+    <div className={`bg-white border rounded-xl overflow-hidden transition-colors ${expandido ? 'border-utec-primary shadow-sm' : 'border-gray-200'}`}>
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${estado.dot}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-gray-900 truncate">{lab.nombre}</p>
+            {lab.tieneModulos && <span className="text-[10px] text-gray-400 shrink-0">4 mód.</span>}
           </div>
-        ) : (
-          <>
-            {/* Chip bar horizontal */}
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                Laboratorio
-              </p>
-              <div className="-mx-4 px-4 overflow-x-auto scrollbar-hide">
-                <div className="flex gap-2 pb-2 min-w-max">
-                  {labs.map(lab => {
-                    const activo = labSeleccionado?.id === lab.id;
-                    return (
-                      <button
-                        key={lab.id}
-                        onClick={() => setLabSeleccionado(lab)}
-                        disabled={cargandoLab}
-                        className={`flex-shrink-0 flex flex-col items-center px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all ${
-                          activo
-                            ? 'bg-utec-primary text-white border-utec-primary shadow-md'
-                            : 'bg-white text-gray-700 border-gray-200 hover:border-utec-primary/50'
-                        }`}
-                      >
-                        <span className="text-base font-bold">
-                          {String(lab.numero).padStart(2, '0')}
-                        </span>
-                        {lab.tieneModulos && (
-                          <span className={`text-[10px] ${activo ? 'text-white/80' : 'text-gray-400'}`}>
-                            4 mód.
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+          <p className={`text-xs truncate mt-0.5 ${ocupado ? 'text-gray-600' : 'text-gray-400'}`}>
+            {resumen}
+          </p>
+        </div>
+        <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold ${estado.badge}`}>
+          {estado.label}
+        </span>
+        <ChevronDown size={16} className={`shrink-0 text-gray-400 transition-transform ${expandido ? 'rotate-180' : ''}`} />
+      </button>
 
-              {labSeleccionado && (
-                <div className="flex items-center justify-between mt-2">
-                  <p className="text-xs text-gray-500">{labSeleccionado.nombre}</p>
-                  <button
-                    onClick={() => cargarDatosLab(labSeleccionado.id)}
-                    disabled={cargandoLab}
-                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-40"
-                  >
-                    <RefreshCw size={12} className={cargandoLab ? 'animate-spin' : ''} />
-                    Actualizar
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {contenidoLab}
-          </>
-        )}
-      </div>
-
-      {/* ─── DESKTOP: grid con sidebar ─── */}
-      <div className="hidden lg:grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1 space-y-4">
-          <SelectorLab
-            labs={labs}
-            labSeleccionado={labSeleccionado}
-            onChange={setLabSeleccionado}
-            cargando={cargandoLab}
+      {expandido && (
+        <div className="border-t border-gray-100 bg-gray-50/60 p-4 space-y-4">
+          <EstadoActual
+            claseActiva={claseActiva}
+            reservaActiva={reservaActiva}
+            horaActual={horaActual}
+            labNombre={lab.nombre}
           />
-          {labSeleccionado && (
-            <button
-              onClick={() => cargarDatosLab(labSeleccionado.id)}
-              disabled={cargandoLab}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={cargandoLab ? 'animate-spin' : ''} />
-              Actualizar
-            </button>
-          )}
+          <AgendaDelDia clases={clases} reservas={reservas} labNombre={lab.nombre} />
         </div>
-        <div className="lg:col-span-2 space-y-6">
-          {contenidoLab}
-        </div>
-      </div>
+      )}
     </div>
   );
 }

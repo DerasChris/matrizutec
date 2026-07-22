@@ -1,11 +1,18 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Users, Clock, Bookmark, BookOpen, GraduationCap, Hash, Award } from 'lucide-react';
+import { Users, Clock, Bookmark, BookOpen, GraduationCap, Hash, Award, Moon } from 'lucide-react';
 import { colorPorCodigo, TIPOS_CLASE, TIPOS_CLASE_LABEL } from '../../lib/constants';
 import { formatearHora } from '../../utils/dateHelpers';
 
 const COLOR_REUNION = '#7c3aed';
 const COLOR_DEFENSA = '#0d9488';
+
+// A partir de esta hora una clase se considera de salida tardía (después del
+// cierre "normal" de 20:00, aunque el horario operativo llega hasta 20:30).
+const HORA_SALIDA_TARDIA = '20:00';
+function esSalidaTardia(horaFin) {
+  return typeof horaFin === 'string' && horaFin > HORA_SALIDA_TARDIA;
+}
 
 function TooltipCard({ clase, esReserva, pos }) {
   const W = 256;
@@ -63,6 +70,9 @@ function TooltipCard({ clase, esReserva, pos }) {
               <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
                 <Clock size={11} className="shrink-0" />
                 {formatearHora(clase.horaInicio)} – {formatearHora(clase.horaFin)}
+                {esSalidaTardia(clase.horaFin) && (
+                  <span className="flex items-center gap-0.5 text-amber-400"><Moon size={10} /> salida tardía</span>
+                )}
               </div>
             </>
           ) : clase.tipo === TIPOS_CLASE.REUNION ? (
@@ -75,6 +85,9 @@ function TooltipCard({ clase, esReserva, pos }) {
               <div className="flex items-center gap-1.5 text-gray-300 text-[11px] mt-1">
                 <Clock size={11} className="shrink-0" />
                 {formatearHora(clase.horaInicio)} – {formatearHora(clase.horaFin)}
+                {esSalidaTardia(clase.horaFin) && (
+                  <span className="flex items-center gap-0.5 text-amber-400"><Moon size={10} /> salida tardía</span>
+                )}
               </div>
               {clase.observaciones && (
                 <p className="text-gray-400 text-[10px] italic border-t border-gray-700 pt-2 mt-2">
@@ -98,6 +111,9 @@ function TooltipCard({ clase, esReserva, pos }) {
                 <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
                   <Clock size={11} className="shrink-0" />
                   {formatearHora(clase.horaInicio)} – {formatearHora(clase.horaFin)}
+                  {esSalidaTardia(clase.horaFin) && (
+                    <span className="flex items-center gap-0.5 text-amber-400"><Moon size={10} /> salida tardía</span>
+                  )}
                 </div>
                 {clase.inscritos > 0 && (
                   <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
@@ -130,6 +146,9 @@ function TooltipCard({ clase, esReserva, pos }) {
                 <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
                   <Clock size={11} className="shrink-0" />
                   {formatearHora(clase.horaInicio)} – {formatearHora(clase.horaFin)}
+                  {esSalidaTardia(clase.horaFin) && (
+                    <span className="flex items-center gap-0.5 text-amber-400"><Moon size={10} /> salida tardía</span>
+                  )}
                 </div>
                 {clase.inscritos > 0 && (
                   <div className="flex items-center gap-1.5 text-gray-300 text-[11px]">
@@ -201,11 +220,14 @@ export default function BloqueClase({ clase, onClick, compacto = false, esReserv
         onClick={onClick}
         onMouseEnter={onEnter}
         onMouseLeave={() => setPos(null)}
-        className={`w-full h-full text-left rounded text-white px-2 py-1 hover:ring-2 hover:ring-white hover:ring-offset-1 transition-all overflow-hidden flex flex-col justify-center ${
+        className={`relative w-full h-full text-left rounded text-white px-2 py-1 hover:ring-2 hover:ring-white hover:ring-offset-1 transition-all overflow-hidden flex flex-col justify-center ${
           esReserva ? 'border-2 border-dashed border-amber-300' : ''
         }`}
         style={{ backgroundColor: color }}
       >
+        {esSalidaTardia(clase.horaFin) && (
+          <Moon size={10} className="absolute top-1 right-1 text-amber-300 drop-shadow" aria-label="Salida tardía" />
+        )}
         <div className="flex items-center gap-1 text-[11px] font-semibold leading-tight truncate">
           <Icono size={10} className="flex-shrink-0" />
           <span className="truncate">{titulo}</span>

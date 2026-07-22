@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight, Printer, CalendarDays, LayoutGrid, CalendarPlus } from 'lucide-react';
+import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight, Printer, CalendarDays, LayoutGrid, CalendarPlus, Maximize2, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { obtenerLaboratorios, obtenerCicloActivo } from '../../services/laboratoriosService';
 import { ROLES, MESES, TIPOS_CLASE, colorPorCodigo } from '../../lib/constants';
@@ -119,6 +119,7 @@ export default function MatrizLab() {
   const [cargandoClases,  setCargandoClases]  = useState(false);
 
   const [vista, setVista] = useState('mensual'); // 'mensual' | 'semanal'
+  const [modoConcentracion, setModoConcentracion] = useState(false);
 
   const [formAbierto,    setFormAbierto]    = useState(false);
   const [claseEditando,  setClaseEditando]  = useState(null);
@@ -131,6 +132,14 @@ export default function MatrizLab() {
   useEffect(() => { cargarBase(); }, []);
   useEffect(() => { if (labSel && ciclo) cargar(); }, [labSel, ciclo, mes, anio]);
 
+  // Salir del modo concentración con Escape
+  useEffect(() => {
+    if (!modoConcentracion) return;
+    function onKeyDown(e) { if (e.key === 'Escape') setModoConcentracion(false); }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [modoConcentracion]);
+
   async function cargarBase() {
     try {
       setCargandoInicial(true);
@@ -138,16 +147,18 @@ export default function MatrizLab() {
         obtenerLaboratorios(),
         obtenerCicloActivo(),
       ]);
-      const labsFiltrados =
-        perfil?.rol === ROLES.ENCARGADO &&
-        Array.isArray(perfil?.labsAsignados) &&
-        perfil.labsAsignados.length > 0
-          ? labsData.filter(l => perfil.labsAsignados.includes(l.id))
-          : labsData;
+      // Un encargado solo ve sus labs asignados. Sin nada asignado todavía,
+      // ve la lista vacía (no todos los labs) hasta que la jefa le asigne uno.
+      const labsFiltrados = perfil?.rol === ROLES.ENCARGADO
+        ? labsData.filter(l => (perfil?.labsAsignados || []).includes(l.id))
+        : labsData;
 
       setLabs(labsFiltrados);
       setCiclo(cicloData);
       if (labsFiltrados.length > 0) setLabSel(labsFiltrados[0]);
+      if (perfil?.rol === ROLES.ENCARGADO && labsFiltrados.length === 0) {
+        toast.error('Todavía no tienes laboratorios asignados. Pide a la jefa que te asigne uno.');
+      }
       if (!cicloData) toast.error('No hay un ciclo activo. Crea uno desde el dashboard.');
     } catch (e) {
       console.error(e);
@@ -252,6 +263,13 @@ export default function MatrizLab() {
         <p className="text-gray-600 text-sm mt-1">{ciclo.nombre}</p>
       </div>
 
+      {labs.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center mb-4">
+          <p className="text-amber-900 font-medium mb-1">Todavía no tienes laboratorios asignados</p>
+          <p className="text-sm text-amber-800">Pide a la jefa que te asigne uno o más desde Gestión de usuarios.</p>
+        </div>
+      )}
+
       {/* ── Barra de controles ── */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
         <div className="flex flex-wrap items-end gap-3">
@@ -337,6 +355,16 @@ export default function MatrizLab() {
             Actualizar
           </button>
 
+          <button
+            onClick={() => setModoConcentracion(true)}
+            disabled={!labSel}
+            className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 text-sm text-gray-700 disabled:opacity-40"
+            title="Pantalla completa — navega con el cursor (arrastrar para desplazar)"
+          >
+            <Maximize2 size={14} />
+            Modo concentración
+          </button>
+
           {/* Botón imprimir — disponible para encargados o cuando hay lab seleccionado */}
           {labSel && (
             <button
@@ -417,6 +445,87 @@ export default function MatrizLab() {
               : `${cantidadClases} clase${cantidadClases === 1 ? '' : 's'} · ${cantidadReservas} reserva${cantidadReservas === 1 ? '' : 's'} aprobada${cantidadReservas === 1 ? '' : 's'}${vista === 'mensual' ? ` en ${mesLabel}` : ''}`}
           </p>
         </>
+      )}
+
+      {/* ── Modo concentración: pantalla completa ── */}
+      {modoConcentracion && labSel && (
+        <div className="fixed inset-0 z-40 bg-white flex flex-col">
+          <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-200 shrink-0 flex-wrap">
+            <div className="flex items-center gap-4">
+              {vista === 'mensual' && (
+                <div className="flex items-center gap-1.5">
+                  <button onClick={mesAnterior} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50" title="Mes anterior">
+                    <ChevronLeft size={20} />
+                  </button>
+                  <button onClick={mesSiguiente} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50" title="Mes siguiente">
+                    <ChevronRight size={20} />
+                  </button>
+                </div>
+              )}
+              <div>
+                <h2 className="text-3xl md:text-4xl font-bold text-gray-900 leading-none capitalize">
+                  {vista === 'mensual' ? `${mesLabel} ${anio}` : 'Vista semanal'}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1.5">
+                  {labSel.nombre} · Arrastra para desplazarte, clic en una clase para editar
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                <button
+                  onClick={() => setVista('mensual')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    vista === 'mensual' ? 'bg-white text-utec-primary shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  <LayoutGrid size={13} /> Mensual
+                </button>
+                <button
+                  onClick={() => setVista('semanal')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    vista === 'semanal' ? 'bg-white text-utec-primary shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  <CalendarDays size={13} /> Semanal
+                </button>
+              </div>
+              <button
+                onClick={() => setModoConcentracion(false)}
+                className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600"
+                title="Salir del modo concentración (Esc)"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 px-6 py-4">
+            {vista === 'mensual' ? (
+              <MatrizGrid
+                lab={labSel}
+                clases={clases}
+                reservas={reservasDelLabYMes}
+                anio={anio}
+                mes={mes}
+                onCrearClase={abrirNueva}
+                onEditarClase={abrirEditar}
+                onClickReserva={r => setReservaSeleccionada(r)}
+                modoLectura
+                maxHeight="100%"
+              />
+            ) : (
+              <MatrizSemanal
+                clases={clases}
+                reservas={todasLasReservas.filter(r => r.labId === labSel.id)}
+                onClaseClick={abrirEditar}
+                modoLectura
+                maxHeight="100%"
+              />
+            )}
+          </div>
+        </div>
       )}
 
       <ClaseFormulario

@@ -105,9 +105,18 @@ export default function ClaseFormulario({
       .reduce((sum, m) => sum + (m.equipos || 0), 0);
   }, [form.modulos, lab, tieneModulos]);
 
+  // Algunos errores de validación se muestran bajo una clave agrupada
+  // ("horario" para horaInicio/horaFin, "fechas" para fechaInicio/fechaFin)
+  // distinta al nombre del campo — hay que limpiar también esa clave o el
+  // mensaje queda pegado en pantalla aunque el campo ya esté correcto.
+  const GRUPOS_ERROR = { horaInicio: 'horario', horaFin: 'horario', fechaInicio: 'fechas', fechaFin: 'fechas' };
+
   function actualizar(campo, valor) {
     setForm(f => ({ ...f, [campo]: valor }));
-    setErrores(e => ({ ...e, [campo]: null }));
+    setErrores(e => {
+      const grupo = GRUPOS_ERROR[campo];
+      return grupo ? { ...e, [campo]: null, [grupo]: null } : { ...e, [campo]: null };
+    });
   }
 
   function toggleDia(diaId) {
@@ -117,6 +126,7 @@ export default function ClaseFormulario({
         ? f.diasSemana.filter(d => d !== diaId)
         : [...f.diasSemana, diaId],
     }));
+    setErrores(e => ({ ...e, diasSemana: null }));
   }
 
   function toggleModulo(moduloId) {
@@ -126,6 +136,7 @@ export default function ClaseFormulario({
         ? f.modulos.filter(m => m !== moduloId)
         : [...f.modulos, moduloId],
     }));
+    setErrores(e => ({ ...e, modulos: null }));
   }
 
   function todosLosModulos() {
@@ -134,6 +145,7 @@ export default function ClaseFormulario({
       ...f,
       modulos: f.modulos.length === lab.modulos.length ? [] : lab.modulos.map(m => m.id),
     }));
+    setErrores(e => ({ ...e, modulos: null }));
   }
 
   function validar() {
@@ -161,13 +173,35 @@ export default function ClaseFormulario({
     return Object.keys(e).length === 0;
   }
 
+  // Cuando se fuerza el guardado sobre una colisión, la(s) clase(s) con las
+  // que choca quedan marcadas "por revisar" — no se les toca el módulo ni el
+  // horario, solo se deja constancia de que hay que revisarlas manualmente.
+  async function marcarColisionesParaRevision(cols, nombreNueva, seccionNueva) {
+    const nota = `⚠ Choca con "${nombreNueva}" Sec. ${seccionNueva} tras una reasignación manual — verificar módulo/horario.`;
+    for (const col of cols) {
+      const c = col.clase;
+      try {
+        await actualizarClase(c.id, {
+          pendienteRevision: true,
+          observaciones: c.observaciones ? `${c.observaciones}\n${nota}` : nota,
+        });
+      } catch (e) {
+        console.error('No se pudo marcar para revisión:', c.id, e);
+      }
+    }
+  }
+
   async function handleGuardar() {
     if (!validar()) {
       toast.error('Revisa los campos marcados');
       return;
     }
-    if (colisiones.length > 0) {
-      const ok = confirm(`Hay ${colisiones.length} colisión(es) con clases existentes. ¿Guardar de todos modos?`);
+    const colisionesAlGuardar = colisiones;
+    if (colisionesAlGuardar.length > 0) {
+      const ok = confirm(
+        `Hay ${colisionesAlGuardar.length} colisión(es) con clases existentes. ¿Guardar de todos modos?\n\n` +
+        `Las clases con las que choca quedarán marcadas "por revisar" para reasignarlas.`
+      );
       if (!ok) return;
     }
 
@@ -212,6 +246,12 @@ export default function ClaseFormulario({
         });
         toast.success('Clase creada');
       }
+
+      if (colisionesAlGuardar.length > 0) {
+        await marcarColisionesParaRevision(colisionesAlGuardar, payload.nombreAsignatura, payload.seccion);
+        toast(`${colisionesAlGuardar.length} clase(s) en conflicto marcada(s) para revisión`, { icon: '⚠️' });
+      }
+
       onGuardado?.();
       onCerrar();
     } catch (e) {

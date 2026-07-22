@@ -21,9 +21,13 @@ import Servicios from './pages/Servicios';
 import RegistroActividad from './pages/admin/RegistroActividad';
 
 export default function App() {
+  const basename = import.meta.env.BASE_URL === '/'
+    ? '/'
+    : import.meta.env.BASE_URL.replace(/\/$/, '');
+
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={basename}>
         <Toaster
           position="top-right"
           toastOptions={{

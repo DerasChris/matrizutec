@@ -1,13 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
+import toast from 'react-hot-toast';
 import {
   Search, AlertTriangle, CheckCircle2, BookOpen, RefreshCw,
   Edit2, ChevronUp, ChevronDown, ChevronsUpDown, AlertCircle,
-  Clock, Plus, X,
+  Clock, Plus, X, CalendarRange, Trash2,
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { obtenerTodosLosCiclos } from '../../services/ciclosService';
-import { obtenerClasesDelCiclo, obtenerLaboratorios } from '../../services/clasesService';
+import {
+  obtenerClasesDelCiclo, obtenerLaboratorios, actualizarFechasRegulares,
+  eliminarClasesRegularesDelCiclo,
+} from '../../services/clasesService';
 import ClaseFormulario from '../../components/admin/ClaseFormulario';
-import { DIAS_SEMANA } from '../../lib/constants';
+import { DIAS_SEMANA, TIPOS_CLASE, ROLES } from '../../lib/constants';
 
 const DIA_CORTO = {
   lunes: 'Lu', martes: 'Ma', miercoles: 'Mi',
@@ -30,7 +35,17 @@ function detectarConflictos(clases) {
       if (!diasComunes.length) continue;
       const [ai, af] = [horaAMin(a.horaInicio), horaAMin(a.horaFin)];
       const [bi, bf] = [horaAMin(b.horaInicio), horaAMin(b.horaFin)];
-      if (ai < bf && af > bi) pares.push({ a, b, diasComunes });
+      if (!(ai < bf && af > bi)) continue;
+
+      // Mismo lab/día/horario no es conflicto real si el lab tiene módulos
+      // y cada clase ocupa uno distinto (p. ej. Lab 03: m1 vs m3 conviven).
+      // Solo es conflicto si comparten módulo, o si alguna ocupa el
+      // laboratorio completo (modulos vacío).
+      const modA = Array.isArray(a.modulos) ? a.modulos : [];
+      const modB = Array.isArray(b.modulos) ? b.modulos : [];
+      if (modA.length > 0 && modB.length > 0 && !modA.some(m => modB.includes(m))) continue;
+
+      pares.push({ a, b, diasComunes });
     }
   }
   return pares;
@@ -80,6 +95,7 @@ const COLS = [
 ];
 
 export default function GestionCarga() {
+  const { perfil } = useAuth();
   const [ciclos,        setCiclos]        = useState([]);
   const [cicloId,       setCicloId]       = useState('');
   const [clases,        setClases]        = useState([]);
@@ -88,20 +104,33 @@ export default function GestionCarga() {
   const [tab,           setTab]           = useState('carga');
   const [busqueda,      setBusqueda]      = useState('');
   const [filtroLab,     setFiltroLab]     = useState('');
-  const [filtroDia,     setFiltroDia]     = useState('');
+  const [filtroDias,    setFiltroDias]    = useState([]); // array de ids de día, OR entre sí
   const [filtroEstado,  setFiltroEstado]  = useState('activas');
   const [soloConflicto, setSoloConflicto] = useState(false);
+  const [soloPendientes, setSoloPendientes] = useState(false);
   const [formAbierto,   setFormAbierto]   = useState(false);
   const [claseEditando, setClaseEditando] = useState(null);
   const [labNueva,      setLabNueva]      = useState('');
   const [pickLab,       setPickLab]       = useState(false);
   const [ordenCol,      setOrdenCol]      = useState('labId');
   const [ordenDir,      setOrdenDir]      = useState('asc');
+  const [fechasModalAbierto, setFechasModalAbierto] = useState(false);
+  const [fechaInicioForm, setFechaInicioForm] = useState('');
+  const [fechaFinForm,    setFechaFinForm]    = useState('');
+  const [guardandoFechas, setGuardandoFechas] = useState(false);
+  const [vaciarModalAbierto, setVaciarModalAbierto] = useState(false);
+  const [vaciarConfirmText,  setVaciarConfirmText]  = useState('');
+  const [vaciando,           setVaciando]           = useState(false);
+
+  // Un encargado solo ve/edita labs asignados. Sin nada asignado, ve vacío
+  // (no todos los labs) hasta que la jefa le asigne uno.
+  const esEncargado = perfil?.rol === ROLES.ENCARGADO;
+  const labsAsignadosSet = esEncargado ? new Set(perfil?.labsAsignados || []) : null;
 
   useEffect(() => {
     Promise.all([obtenerTodosLosCiclos(), obtenerLaboratorios()]).then(([c, l]) => {
       setCiclos(c);
-      setLabs(l);
+      setLabs(labsAsignadosSet ? l.filter(lab => labsAsignadosSet.has(lab.id)) : l);
       const activo = c.find(x => x.activo);
       if (activo) setCicloId(activo.id);
     });
@@ -115,7 +144,7 @@ export default function GestionCarga() {
   function recargar() {
     setCargando(true);
     obtenerClasesDelCiclo(cicloId)
-      .then(setClases)
+      .then(cs => setClases(labsAsignadosSet ? cs.filter(c => labsAsignadosSet.has(c.labId)) : cs))
       .finally(() => setCargando(false));
   }
 
@@ -139,8 +168,9 @@ export default function GestionCarga() {
     if (filtroEstado === 'activas')   r = r.filter(c => c.activo !== false);
     if (filtroEstado === 'inactivas') r = r.filter(c => c.activo === false);
     if (filtroLab)  r = r.filter(c => c.labId === filtroLab);
-    if (filtroDia)  r = r.filter(c => (c.diasSemana || []).includes(filtroDia));
+    if (filtroDias.length > 0) r = r.filter(c => (c.diasSemana || []).some(d => filtroDias.includes(d)));
     if (soloConflicto) r = r.filter(c => conflictIds.has(c.id));
+    if (soloPendientes) r = r.filter(c => c.pendienteRevision && c.activo !== false);
     if (busqueda.trim()) {
       const q = busqueda.toLowerCase();
       r = r.filter(c =>
@@ -165,7 +195,7 @@ export default function GestionCarga() {
       return ordenDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
     });
     return r;
-  }, [clases, filtroEstado, filtroLab, filtroDia, busqueda, soloConflicto, ordenCol, ordenDir, labMap, conflictIds]);
+  }, [clases, filtroEstado, filtroLab, filtroDias, busqueda, soloConflicto, soloPendientes, ordenCol, ordenDir, labMap, conflictIds]);
 
   const conflictGroups = useMemo(() => {
     const byLab = {};
@@ -208,8 +238,58 @@ export default function GestionCarga() {
   }
 
   const labIdForm = claseEditando ? claseEditando.labId : labNueva;
+  const cicloSeleccionado = ciclos.find(c => c.id === cicloId) || null;
   const clasesActivas = clases.filter(c => c.activo !== false);
   const labsConClases = new Set(clasesActivas.map(c => c.labId)).size;
+  const regularesActivasCount = clasesActivas.filter(c => c.tipo === TIPOS_CLASE.REGULAR).length;
+  const regularesTotalCount = clases.filter(c => c.tipo === TIPOS_CLASE.REGULAR).length;
+
+  function abrirFechasModal() {
+    setFechaInicioForm(cicloSeleccionado?.fechaInicio || '');
+    setFechaFinForm(cicloSeleccionado?.fechaFin || '');
+    setFechasModalAbierto(true);
+  }
+
+  async function confirmarEstandarizarFechas() {
+    if (!fechaInicioForm || !fechaFinForm) {
+      toast.error('Completa ambas fechas');
+      return;
+    }
+    if (fechaFinForm < fechaInicioForm) {
+      toast.error('La fecha fin debe ser posterior a la fecha inicio');
+      return;
+    }
+    setGuardandoFechas(true);
+    try {
+      const res = await actualizarFechasRegulares(cicloId, fechaInicioForm, fechaFinForm);
+      toast.success(`${res.actualizadas} clases regulares actualizadas`);
+      setFechasModalAbierto(false);
+      recargar();
+    } catch (e) {
+      toast.error('Error al estandarizar fechas');
+    } finally {
+      setGuardandoFechas(false);
+    }
+  }
+
+  async function confirmarVaciarCiclo() {
+    if (vaciarConfirmText.trim() !== (cicloSeleccionado?.nombre || '')) {
+      toast.error('El texto no coincide con el nombre del ciclo');
+      return;
+    }
+    setVaciando(true);
+    try {
+      const res = await eliminarClasesRegularesDelCiclo(cicloId, cicloSeleccionado?.nombre, perfil);
+      toast.success(`${res.eliminadas} clases regulares eliminadas. Se guardó un respaldo en el historial.`);
+      setVaciarModalAbierto(false);
+      setVaciarConfirmText('');
+      recargar();
+    } catch (e) {
+      toast.error('Error al eliminar las clases');
+    } finally {
+      setVaciando(false);
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-full">
@@ -259,6 +339,31 @@ export default function GestionCarga() {
               )}
             </div>
 
+            {/* Estas dos acciones tocan TODO el ciclo sin distinguir laboratorio
+                (fechas y borrado masivo), por eso quedan solo para jefa aunque
+                un encargado esté viendo la página. */}
+            {!esEncargado && (
+              <>
+                <button
+                  onClick={abrirFechasModal}
+                  disabled={!cicloId}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 disabled:opacity-40"
+                  title="Estandarizar fecha de inicio y fin de todas las clases regulares del ciclo"
+                >
+                  <CalendarRange size={14} /> Estandarizar fechas
+                </button>
+
+                <button
+                  onClick={() => { setVaciarConfirmText(''); setVaciarModalAbierto(true); }}
+                  disabled={!cicloId || regularesTotalCount === 0}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-40"
+                  title="Eliminar todas las clases regulares del ciclo para volver a importar desde cero"
+                >
+                  <Trash2 size={14} /> Vaciar y reimportar
+                </button>
+              </>
+            )}
+
             <button
               onClick={recargar}
               className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600"
@@ -285,6 +390,7 @@ export default function GestionCarga() {
             value={pendientesCount}
             icon={Clock}
             color={pendientesCount > 0 ? 'amber' : 'green'}
+            onClick={pendientesCount > 0 ? () => { setTab('carga'); setSoloPendientes(true); } : undefined}
           />
         </div>
       </div>
@@ -332,14 +438,34 @@ export default function GestionCarga() {
               <option value="">Todos los labs</option>
               {labs.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
             </select>
-            <select
-              value={filtroDia}
-              onChange={e => setFiltroDia(e.target.value)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
-            >
-              <option value="">Todos los días</option>
-              {DIAS_SEMANA.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
-            </select>
+            <div className="flex items-center gap-1 bg-white border border-gray-300 rounded-lg px-1.5 py-1">
+              {DIAS_SEMANA.map(d => {
+                const activo = filtroDias.includes(d.id);
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => setFiltroDias(f => activo ? f.filter(x => x !== d.id) : [...f, d.id])}
+                    title={d.label}
+                    className={`w-7 h-7 text-xs font-semibold rounded-md transition-colors ${
+                      activo ? 'bg-utec-primary text-white' : 'text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    {DIA_CORTO[d.id]}
+                  </button>
+                );
+              })}
+              {filtroDias.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFiltroDias([])}
+                  title="Limpiar días"
+                  className="ml-0.5 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
             <select
               value={filtroEstado}
               onChange={e => setFiltroEstado(e.target.value)}
@@ -358,6 +484,17 @@ export default function GestionCarga() {
                   className="rounded text-red-500 focus:ring-red-400"
                 />
                 Solo conflictos
+              </label>
+            )}
+            {pendientesCount > 0 && (
+              <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={soloPendientes}
+                  onChange={e => setSoloPendientes(e.target.checked)}
+                  className="rounded text-amber-500 focus:ring-amber-400"
+                />
+                Solo por revisar
               </label>
             )}
             <span className="text-xs text-gray-400 ml-auto">{clasesFiltradas.length} resultado{clasesFiltradas.length !== 1 ? 's' : ''}</span>
@@ -555,9 +692,11 @@ export default function GestionCarga() {
             </div>
             <div className="flex-1 overflow-y-auto">
               <ClaseFormulario
-                labId={labIdForm}
-                cicloId={cicloId}
+                abierto={formAbierto}
+                lab={labMap[labIdForm]}
+                ciclo={cicloSeleccionado}
                 claseEditando={claseEditando}
+                todasLasClases={clases}
                 onGuardado={onGuardado}
                 onCerrar={cerrarForm}
               />
@@ -569,6 +708,125 @@ export default function GestionCarga() {
       {/* Overlay al hacer click fuera del picker de lab */}
       {pickLab && (
         <div className="fixed inset-0 z-10" onClick={() => setPickLab(false)} />
+      )}
+
+      {/* Modal: estandarizar fechas de clases regulares */}
+      {fechasModalAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-sm font-semibold text-gray-900">Estandarizar fechas</h2>
+              <button
+                onClick={() => setFechasModalAbierto(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-gray-500">
+                Aplica la misma fecha de inicio y fin a las <strong>{regularesActivasCount}</strong> clases
+                regulares activas de <strong>{cicloSeleccionado?.nombre || 'este ciclo'}</strong>. No afecta
+                clases puntuales, reuniones ni defensas.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Fecha inicio</label>
+                  <input
+                    type="date"
+                    value={fechaInicioForm}
+                    onChange={e => setFechaInicioForm(e.target.value)}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-utec-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Fecha fin</label>
+                  <input
+                    type="date"
+                    value={fechaFinForm}
+                    onChange={e => setFechaFinForm(e.target.value)}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-utec-primary"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
+              <button
+                onClick={() => setFechasModalAbierto(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEstandarizarFechas}
+                disabled={guardandoFechas}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-utec-primary rounded-lg hover:bg-utec-dark disabled:opacity-50"
+              >
+                <CalendarRange size={14} />
+                {guardandoFechas ? 'Aplicando...' : `Aplicar a ${regularesActivasCount} clases`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: vaciar clases regulares del ciclo */}
+      {vaciarModalAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-sm font-semibold text-red-700 flex items-center gap-2">
+                <AlertTriangle size={16} /> Vaciar y reimportar
+              </h2>
+              <button
+                onClick={() => setVaciarModalAbierto(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm text-gray-700">
+                Esto elimina <strong>permanentemente</strong> las <strong>{regularesTotalCount}</strong> clases
+                tipo "regular" de <strong>{cicloSeleccionado?.nombre || 'este ciclo'}</strong> (activas e inactivas),
+                para que puedas volver a importar el Excel desde cero.
+              </p>
+              <p className="text-xs text-gray-500">
+                No toca reuniones, defensas ni prácticas puntuales — esas no vienen del Excel y no se recrean al
+                reimportar. Se guarda un respaldo automático en el historial de carga antes de borrar, por si necesitas
+                restaurar.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Escribe <strong>{cicloSeleccionado?.nombre}</strong> para confirmar
+                </label>
+                <input
+                  type="text"
+                  value={vaciarConfirmText}
+                  onChange={e => setVaciarConfirmText(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-400"
+                  placeholder={cicloSeleccionado?.nombre}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
+              <button
+                onClick={() => setVaciarModalAbierto(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarVaciarCiclo}
+                disabled={vaciando || vaciarConfirmText.trim() !== (cicloSeleccionado?.nombre || '')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-40"
+              >
+                <Trash2 size={14} />
+                {vaciando ? 'Eliminando...' : `Eliminar ${regularesTotalCount} clases`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

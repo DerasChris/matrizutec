@@ -89,7 +89,7 @@ Importante: la autorización visual no sustituye reglas Firestore. Los cambios d
 
 ### `laboratorios`
 
-Contiene los 14 laboratorios. Lab 03 tiene módulos `m1` a `m4`.
+Contiene los 15 laboratorios (`lab_01`–`lab_15`; `lab_15` agregado en 2026-07). Lab 03 tiene módulos `m1` a `m4`.
 
 ### `ciclos`
 
