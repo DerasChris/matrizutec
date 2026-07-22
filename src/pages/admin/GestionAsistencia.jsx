@@ -1,0 +1,557 @@
+import { useState, useEffect, useMemo, useRef } from 'react';
+import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
+import { QRCodeCanvas } from 'qrcode.react';
+import {
+  QrCode, FileBarChart, RefreshCw, KeyRound, Printer,
+  Download, AlertTriangle, Plus, Search,
+} from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { obtenerTodosLosCiclos } from '../../services/ciclosService';
+import { obtenerClasesDelCiclo, obtenerLaboratorios } from '../../services/clasesService';
+import {
+  obtenerDocentes, generarPinUnico, guardarPinDocente,
+  obtenerAsistenciasDelCiclo,
+} from '../../services/asistenciaService';
+import { ROLES, TIPOS_CLASE } from '../../lib/constants';
+
+const DIA_CORTO = {
+  lunes: 'Lu', martes: 'Ma', miercoles: 'Mi',
+  jueves: 'Ju', viernes: 'Vi', sabado: 'Sá', domingo: 'Do',
+};
+
+const NOMBRE_REVISAR = 'REVISAR';
+
+export default function GestionAsistencia() {
+  const { perfil } = useAuth();
+  const esEncargado = perfil?.rol === ROLES.ENCARGADO;
+  const labsAsignadosSet = esEncargado ? new Set(perfil?.labsAsignados || []) : null;
+
+  const [tab, setTab] = useState('pins');
+  const [ciclos, setCiclos] = useState([]);
+  const [cicloId, setCicloId] = useState('');
+  const [labs, setLabs] = useState([]);
+  const [clases, setClases] = useState([]);
+  const [docentes, setDocentes] = useState([]);
+  const [asistencias, setAsistencias] = useState([]);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    Promise.all([obtenerTodosLosCiclos(), obtenerLaboratorios()]).then(([c, l]) => {
+      setCiclos(c);
+      setLabs(labsAsignadosSet ? l.filter(lab => labsAsignadosSet.has(lab.id)) : l);
+      const activo = c.find(x => x.activo);
+      if (activo) setCicloId(activo.id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!cicloId) return;
+    cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cicloId]);
+
+  async function cargar() {
+    setCargando(true);
+    try {
+      const [clasesData, docentesData, asistData] = await Promise.all([
+        obtenerClasesDelCiclo(cicloId),
+        obtenerDocentes(),
+        obtenerAsistenciasDelCiclo(cicloId),
+      ]);
+      const clasesEnAlcance = labsAsignadosSet
+        ? clasesData.filter(c => labsAsignadosSet.has(c.labId))
+        : clasesData;
+      setClases(clasesEnAlcance);
+      setDocentes(docentesData);
+      setAsistencias(labsAsignadosSet ? asistData.filter(a => labsAsignadosSet.has(a.labId)) : asistData);
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al cargar datos de asistencia');
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  const cicloSeleccionado = ciclos.find(c => c.id === cicloId) || null;
+  const labMap = useMemo(() => Object.fromEntries(labs.map(l => [l.id, l])), [labs]);
+
+  if (cargando && labs.length === 0 && !cicloId) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <RefreshCw className="w-8 h-8 text-utec-primary animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-full">
+      <div className="px-6 pt-6 pb-4 border-b border-gray-200 bg-white">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Asistencia docente</h1>
+            <p className="text-sm text-gray-500 mt-0.5">QR por laboratorio + PIN de 4 dígitos, sin firma</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={cicloId}
+              onChange={e => setCicloId(e.target.value)}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
+            >
+              {ciclos.map(c => (
+                <option key={c.id} value={c.id}>{c.nombre} {c.anio}{c.activo ? ' ★' : ''}</option>
+              ))}
+            </select>
+            <button
+              onClick={cargar}
+              className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600"
+              title="Actualizar"
+            >
+              <RefreshCw size={15} className={cargando ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {labs.length === 0 && (
+        <div className="m-6 bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+          <p className="text-amber-900 font-medium mb-1">Todavía no tienes laboratorios asignados</p>
+          <p className="text-sm text-amber-800">Pide a la jefa que te asigne uno o más desde Gestión de usuarios.</p>
+        </div>
+      )}
+
+      {labs.length > 0 && (
+        <>
+          <div className="px-6 border-b border-gray-200 bg-white flex gap-1 shrink-0">
+            {[
+              { id: 'pins', label: 'PINs de docentes', icon: KeyRound },
+              { id: 'qr', label: 'Generar QR', icon: QrCode },
+              { id: 'reportes', label: 'Reportes', icon: FileBarChart },
+            ].map(t => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                    tab === t.id
+                      ? 'border-utec-primary text-utec-primary'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <Icon size={14} /> {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="p-6 flex-1">
+            {tab === 'pins' && (
+              <TabPins clases={clases} docentes={docentes} onGuardado={cargar} />
+            )}
+            {tab === 'qr' && (
+              <TabQR labs={labs} />
+            )}
+            {tab === 'reportes' && (
+              <TabReportes
+                asistencias={asistencias}
+                labMap={labMap}
+                cicloNombre={cicloSeleccionado?.nombre || ''}
+              />
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Pestaña: PINs de docentes
+// ─────────────────────────────────────────────────────────────────
+
+function TabPins({ clases, docentes, onGuardado }) {
+  const [busqueda, setBusqueda] = useState('');
+  const [guardandoId, setGuardandoId] = useState(null);
+  const [manualAbierto, setManualAbierto] = useState(false);
+  const [manualNombre, setManualNombre] = useState('');
+  const [manualPin, setManualPin] = useState('');
+  const [guardandoManual, setGuardandoManual] = useState(false);
+
+  const docentesPorNombre = useMemo(
+    () => Object.fromEntries(docentes.map(d => [d.nombre, d])),
+    [docentes]
+  );
+
+  const revisarCount = useMemo(
+    () => clases.filter(c => c.tipo === TIPOS_CLASE.REGULAR && c.activo !== false && (c.docente || '').trim().toUpperCase() === NOMBRE_REVISAR).length,
+    [clases]
+  );
+
+  const nombresDistintos = useMemo(() => {
+    const set = new Set();
+    for (const c of clases) {
+      if (c.tipo !== TIPOS_CLASE.REGULAR) continue;
+      if (c.activo === false) continue;
+      const nombre = (c.docente || '').trim();
+      if (!nombre || nombre.toUpperCase() === NOMBRE_REVISAR) continue;
+      set.add(nombre);
+    }
+    // Incluye también docentes ya registrados aunque ya no tengan clase activa este ciclo
+    for (const d of docentes) {
+      if (d.activo !== false) set.add(d.nombre);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [clases, docentes]);
+
+  const filas = nombresDistintos.filter(n =>
+    !busqueda.trim() || n.toLowerCase().includes(busqueda.toLowerCase())
+  );
+
+  async function asignarPin(nombre, pinExistente = null, docenteId = null) {
+    setGuardandoId(nombre);
+    try {
+      const pin = generarPinUnico(docentes, docenteId);
+      await guardarPinDocente({ id: docenteId, nombre, pin });
+      toast.success(`PIN ${pinExistente ? 'regenerado' : 'asignado'} para ${nombre}: ${pin}`);
+      onGuardado();
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar el PIN');
+    } finally {
+      setGuardandoId(null);
+    }
+  }
+
+  async function guardarManual(e) {
+    e.preventDefault();
+    if (!manualNombre.trim()) { toast.error('Escribe el nombre del docente'); return; }
+    if (!/^\d{4}$/.test(manualPin)) { toast.error('El PIN debe ser de 4 dígitos'); return; }
+    const enUso = docentes.some(d => d.activo !== false && d.pin === manualPin);
+    if (enUso) { toast.error('Ese PIN ya está en uso por otro docente'); return; }
+    setGuardandoManual(true);
+    try {
+      await guardarPinDocente({ nombre: manualNombre.trim(), pin: manualPin });
+      toast.success(`PIN asignado a ${manualNombre.trim()}`);
+      setManualNombre(''); setManualPin(''); setManualAbierto(false);
+      onGuardado();
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar');
+    } finally {
+      setGuardandoManual(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-gray-500">
+        El nombre se toma tal cual aparece en la carga académica — debe coincidir exacto para que el
+        escaneo encuentre la clase. Si necesitas registrar un nombre que no aparece en la lista
+        (por ejemplo para corregir una clase marcada <strong>REVISAR</strong>), usa "Agregar manual".
+      </p>
+
+      {revisarCount > 0 && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
+          <p>
+            <strong>{revisarCount}</strong> {revisarCount === 1 ? 'clase tiene' : 'clases tienen'} docente
+            marcado como "REVISAR" — corrígelas primero desde Gestión de carga para que puedan recibir PIN
+            por su nombre real.
+          </p>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-44">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar docente…"
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
+          />
+        </div>
+        <button
+          onClick={() => setManualAbierto(v => !v)}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+        >
+          <Plus size={14} /> Agregar manual
+        </button>
+      </div>
+
+      {manualAbierto && (
+        <form onSubmit={guardarManual} className="flex items-end gap-2 flex-wrap bg-gray-50 border border-gray-200 rounded-lg p-3">
+          <div className="flex-1 min-w-48">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Nombre exacto del docente</label>
+            <input
+              type="text"
+              value={manualNombre}
+              onChange={e => setManualNombre(e.target.value)}
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2"
+              placeholder="Como debe quedar en la clase"
+            />
+          </div>
+          <div className="w-28">
+            <label className="block text-xs font-medium text-gray-600 mb-1">PIN (4 dígitos)</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              value={manualPin}
+              onChange={e => setManualPin(e.target.value.replace(/\D/g, ''))}
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 font-mono"
+              placeholder="0000"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={guardandoManual}
+            className="px-4 py-2 text-sm font-medium text-white bg-utec-primary rounded-lg hover:bg-utec-dark disabled:opacity-50"
+          >
+            Guardar
+          </button>
+        </form>
+      )}
+
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <table className="w-full text-sm border-collapse">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Docente</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">PIN</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {filas.length === 0 && (
+              <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-400 text-sm">Sin docentes para mostrar</td></tr>
+            )}
+            {filas.map(nombre => {
+              const docente = docentesPorNombre[nombre];
+              const cargandoFila = guardandoId === nombre;
+              return (
+                <tr key={nombre} className="hover:bg-gray-50">
+                  <td className="px-4 py-2.5 text-gray-900">{nombre}</td>
+                  <td className="px-4 py-2.5 font-mono text-gray-700">
+                    {docente ? docente.pin : <span className="text-gray-400 font-sans italic">Sin asignar</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button
+                      onClick={() => asignarPin(nombre, docente?.pin, docente?.id)}
+                      disabled={cargandoFila}
+                      className="px-3 py-1.5 text-xs font-medium text-utec-primary border border-utec-primary rounded-lg hover:bg-utec-light disabled:opacity-50"
+                    >
+                      {cargandoFila ? 'Generando…' : docente ? 'Regenerar' : 'Asignar PIN'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Pestaña: Generar QR
+// ─────────────────────────────────────────────────────────────────
+
+function TabQR({ labs }) {
+  const canvasRefs = useRef({});
+  const esBuildOnpremise = import.meta.env.BASE_URL !== '/';
+  const baseUrl = window.location.origin;
+
+  function urlAsistencia(labId) {
+    return `${baseUrl}/asistencia/${labId}`;
+  }
+
+  function imprimirTodos() {
+    const bloques = labs.map(lab => {
+      const canvas = canvasRefs.current[lab.id];
+      const dataUrl = canvas ? canvas.toDataURL('image/png') : '';
+      return `
+        <div class="qr-card">
+          <h2>${lab.nombre}</h2>
+          <img src="${dataUrl}" width="260" height="260" />
+          <p class="url">${urlAsistencia(lab.id)}</p>
+        </div>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><title>QR de asistencia</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; padding: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+  .qr-card { border: 1px solid #ddd; border-radius: 12px; padding: 20px; text-align: center; page-break-inside: avoid; }
+  .qr-card h2 { margin: 0 0 12px; font-size: 18px; color: #003366; }
+  .qr-card img { width: 220px; height: 220px; }
+  .qr-card .url { font-size: 10px; color: #888; margin-top: 10px; word-break: break-all; }
+  @media print { @page { margin: 12mm; } }
+</style></head>
+<body>
+  <div class="grid">${bloques}</div>
+  <script>window.onload = () => window.print();</script>
+</body></html>`;
+
+    const win = window.open('', '_blank', 'width=900,height=1000');
+    if (!win) { toast.error('Permite popups para imprimir'); return; }
+    win.document.write(html);
+    win.document.close();
+  }
+
+  return (
+    <div className="space-y-4">
+      {esBuildOnpremise && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
+          <p>
+            Estás viendo esto desde el build de IIS on-premise. El QR se está generando con la URL{' '}
+            <strong>{baseUrl}</strong> — genera e imprime los QR desde el sitio de <strong>Vercel/producción</strong>,
+            no desde aquí, porque el QR es estático y así queda impreso.
+          </p>
+        </div>
+      )}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-600">Cada QR es fijo por laboratorio — imprímelo una vez y pégalo en el lab.</p>
+        <button
+          onClick={imprimirTodos}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-utec-primary rounded-lg hover:bg-utec-dark"
+        >
+          <Printer size={15} /> Imprimir todos
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {labs.map(lab => (
+          <div key={lab.id} className="border border-gray-200 rounded-xl p-4 text-center bg-white">
+            <p className="text-sm font-semibold text-gray-900 mb-3">{lab.nombre}</p>
+            <QRCodeCanvas
+              value={urlAsistencia(lab.id)}
+              size={160}
+              level="M"
+              ref={el => { canvasRefs.current[lab.id] = el; }}
+            />
+            <p className="text-[10px] text-gray-400 mt-2 break-all">{urlAsistencia(lab.id)}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Pestaña: Reportes
+// ─────────────────────────────────────────────────────────────────
+
+function TabReportes({ asistencias, labMap, cicloNombre }) {
+  const [filtroLab, setFiltroLab] = useState('');
+  const [filtroDocente, setFiltroDocente] = useState('');
+  const [filtroDesde, setFiltroDesde] = useState('');
+  const [filtroHasta, setFiltroHasta] = useState('');
+
+  const filtradas = useMemo(() => {
+    return asistencias
+      .filter(a => !filtroLab || a.labId === filtroLab)
+      .filter(a => !filtroDocente.trim() || a.docente?.toLowerCase().includes(filtroDocente.toLowerCase()))
+      .filter(a => !filtroDesde || a.fecha >= filtroDesde)
+      .filter(a => !filtroHasta || a.fecha <= filtroHasta)
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
+  }, [asistencias, filtroLab, filtroDocente, filtroDesde, filtroHasta]);
+
+  function exportar() {
+    if (filtradas.length === 0) { toast.error('No hay registros para exportar'); return; }
+    const filas = filtradas.map(a => ({
+      Fecha: a.fecha,
+      Día: a.diaSemana,
+      Laboratorio: labMap[a.labId]?.nombre || a.labId,
+      Código: a.codigoAsignatura,
+      Materia: a.nombreAsignatura,
+      Sección: a.seccion,
+      Docente: a.docente,
+      'Hora programada': `${a.horaInicio}-${a.horaFin}`,
+      'Hora marcado': a.horaMarcado,
+      'Alumnos llegaron': a.alumnosLlegaron,
+      Inscritos: a.inscritos,
+    }));
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Asistencia');
+    XLSX.writeFile(wb, `asistencia_${(cicloNombre || 'ciclo').replace(/\s+/g, '_')}.xlsx`);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 items-center">
+        <select
+          value={filtroLab}
+          onChange={e => setFiltroLab(e.target.value)}
+          className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white"
+        >
+          <option value="">Todos los labs</option>
+          {Object.values(labMap).map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+        </select>
+        <input
+          type="text"
+          placeholder="Buscar docente…"
+          value={filtroDocente}
+          onChange={e => setFiltroDocente(e.target.value)}
+          className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white min-w-40"
+        />
+        <input
+          type="date"
+          value={filtroDesde}
+          onChange={e => setFiltroDesde(e.target.value)}
+          className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white"
+        />
+        <span className="text-gray-400 text-sm">a</span>
+        <input
+          type="date"
+          value={filtroHasta}
+          onChange={e => setFiltroHasta(e.target.value)}
+          className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white"
+        />
+        <button
+          onClick={exportar}
+          className="ml-auto flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+        >
+          <Download size={14} /> Exportar Excel
+        </button>
+      </div>
+
+      <div className="border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              {['Fecha', 'Lab', 'Materia', 'Sección', 'Docente', 'Horario', 'Marcado', 'Alumnos'].map(h => (
+                <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {filtradas.length === 0 && (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-sm">Sin registros de asistencia</td></tr>
+            )}
+            {filtradas.map(a => (
+              <tr key={a.id} className="hover:bg-gray-50">
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">{a.fecha} <span className="text-gray-400">({DIA_CORTO[a.diaSemana] || a.diaSemana})</span></td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-700">{labMap[a.labId]?.nombre || a.labId}</td>
+                <td className="px-3 py-2 text-gray-900 max-w-xs truncate" title={a.nombreAsignatura}>{a.nombreAsignatura}</td>
+                <td className="px-3 py-2 text-gray-600">{a.seccion}</td>
+                <td className="px-3 py-2 text-gray-700">{a.docente}</td>
+                <td className="px-3 py-2 whitespace-nowrap font-mono text-gray-700">{a.horaInicio}–{a.horaFin}</td>
+                <td className="px-3 py-2 whitespace-nowrap font-mono text-gray-500">{a.horaMarcado}</td>
+                <td className="px-3 py-2 text-center text-gray-700">{a.alumnosLlegaron}/{a.inscritos}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

@@ -13,12 +13,14 @@ import GestionCarga from './pages/admin/GestionCarga';
 import GestionUsuarios from './pages/admin/GestionUsuarios';
 import GestionCiclos from './pages/admin/GestionCiclos';
 import SolicitudPublica from './pages/SolicitudPublica';
+import AsistenciaEscaneo from './pages/AsistenciaEscaneo';
 import Reservar from './pages/Reservar';
 import MisReservas from './pages/MisReservas';
 import Aprobaciones from './pages/Aprobaciones';
 import { ROLES } from './lib/constants';
 import Servicios from './pages/Servicios';
 import RegistroActividad from './pages/admin/RegistroActividad';
+import GestionAsistencia from './pages/admin/GestionAsistencia';
 
 export default function App() {
   const basename = import.meta.env.BASE_URL === '/'
@@ -36,8 +38,9 @@ export default function App() {
           }}
         />
         <Routes>
-          {/* Ruta pública — sin autenticación requerida */}
+          {/* Rutas públicas — sin autenticación requerida */}
           <Route path="/solicitud" element={<SolicitudPublica />} />
+          <Route path="/asistencia/:labId" element={<AsistenciaEscaneo />} />
 
           <Route path="/login" element={<Login />} />
           <Route path="/registro" element={<Registro />} />
@@ -84,6 +87,12 @@ export default function App() {
             <Route path="/admin/carga" element={
               <ProtectedRoute rolesPermitidos={[ROLES.ENCARGADO, ROLES.JEFA]}>
                 <GestionCarga />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/admin/asistencia" element={
+              <ProtectedRoute rolesPermitidos={[ROLES.ENCARGADO, ROLES.JEFA]}>
+                <GestionAsistencia />
               </ProtectedRoute>
             } />
 
