@@ -220,7 +220,14 @@ export default function AsistenciaEscaneo() {
           {fase === FASES.SELECCIONAR && (
             <div className="space-y-3">
               <AvisosDocente diasSinMarcar={diasSinMarcar} historialReciente={historialReciente} onMarcarRetroactivo={marcarRetroactivo} />
-              <p className="text-sm text-gray-600 text-center">Tienes varias clases en este laboratorio — elige una</p>
+              {clases.length === 0 ? (
+                <p className="text-sm text-gray-600 text-center">
+                  Hoy no tienes clase programada en este laboratorio.
+                  {diasSinMarcar.length === 0 && ' Si olvidaste marcar un día pasado, no hay ninguno pendiente en los últimos 7 días.'}
+                </p>
+              ) : (
+                <p className="text-sm text-gray-600 text-center">Tienes varias clases en este laboratorio — elige una</p>
+              )}
               <div className="space-y-2">
                 {clases.map(c => (
                   <button
