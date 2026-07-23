@@ -3,6 +3,13 @@ import { horaToMinutos, minutosToHora, rangosSesolapan, getDiaSemanaPorIndice, f
 
 export const TOTAL_SLOTS = FRANJAS_HORARIAS.length;
 
+// Dispositivo sin hover real (touch) — en modo concentración, tocar una
+// clase en estos dispositivos muestra el tooltip en vez de abrir el editor,
+// porque no hay forma de "pasar el mouse" antes de dar clic.
+export function esDispositivoTactil() {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(hover: none)').matches;
+}
+
 export function slotIndexAHora(slotIndex) {
   const minutosBase = horaToMinutos(HORA_INICIO_DIA);
   return minutosToHora(minutosBase + slotIndex * SLOT_MINUTOS);

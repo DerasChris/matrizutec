@@ -205,18 +205,27 @@ export default function MatrizGrid({
           style={{ gridTemplateColumns: gridColumns }}
         >
           {/* FECHA */}
-          <div className="flex items-end justify-center pb-2 border-r border-gray-200 bg-gray-50 text-[10px] font-semibold uppercase text-gray-500">
+          <div
+            className="flex items-end justify-center pb-2 border-r border-gray-200 bg-gray-50 text-[10px] font-semibold uppercase text-gray-500 sticky z-30"
+            style={{ left: 0 }}
+          >
             FECHA
           </div>
 
           {/* Días */}
-          <div className="flex items-end justify-center pb-2 border-r border-gray-200 bg-gray-50 text-[10px] font-semibold uppercase text-gray-500">
+          <div
+            className="flex items-end justify-center pb-2 border-r border-gray-200 bg-gray-50 text-[10px] font-semibold uppercase text-gray-500 sticky z-30"
+            style={{ left: ANCHO_FECHA }}
+          >
             Días
           </div>
 
           {/* Módulo */}
           {tieneModulos && (
-            <div className="flex items-end justify-center pb-2 border-r border-gray-200 bg-gray-50 text-[10px] font-semibold uppercase text-gray-500">
+            <div
+              className="flex items-end justify-center pb-2 border-r border-gray-200 bg-gray-50 text-[10px] font-semibold uppercase text-gray-500 sticky z-30"
+              style={{ left: ANCHO_FECHA + ANCHO_DIA }}
+            >
               Mód
             </div>
           )}
@@ -292,12 +301,13 @@ export default function MatrizGrid({
               {/* FECHA — número del día */}
               {esPrimeraFila && (
                 <div
-                  className={`border-r border-gray-200 flex items-center justify-center ${
-                    esHoy ? 'bg-blue-50' : esFinde ? 'bg-gray-100/80' : 'bg-white/80'
+                  className={`border-r border-gray-200 flex items-center justify-center sticky z-10 ${
+                    esHoy ? 'bg-blue-50' : esFinde ? 'bg-gray-100' : 'bg-white'
                   }`}
                   style={{
                     gridColumn: '1 / 2',
                     gridRow: tieneModulos ? `span ${filasDelDia}` : 'span 1',
+                    left: 0,
                   }}
                 >
                   <span className={`text-sm font-bold tabular-nums ${esHoy ? 'text-blue-600' : 'text-gray-800'}`}>
@@ -309,12 +319,13 @@ export default function MatrizGrid({
               {/* DÍAS — nombre del día */}
               {esPrimeraFila && (
                 <div
-                  className={`border-r border-gray-200 flex items-center pl-2 ${
-                    esHoy ? 'bg-blue-50' : esFinde ? 'bg-gray-100/80' : 'bg-white/80'
+                  className={`border-r border-gray-200 flex items-center pl-2 sticky z-10 ${
+                    esHoy ? 'bg-blue-50' : esFinde ? 'bg-gray-100' : 'bg-white'
                   }`}
                   style={{
                     gridColumn: '2 / 3',
                     gridRow: tieneModulos ? `span ${filasDelDia}` : 'span 1',
+                    left: ANCHO_FECHA,
                   }}
                 >
                   <div className="leading-tight">
@@ -331,10 +342,10 @@ export default function MatrizGrid({
               {/* MÓDULO */}
               {tieneModulos && (
                 <div
-                  className={`text-[10px] border-r border-gray-200 flex items-center justify-center font-medium ${
-                    fila.modulo.id === null ? 'bg-amber-50 text-amber-700' : 'text-gray-500 bg-white/60'
+                  className={`text-[10px] border-r border-gray-200 flex items-center justify-center font-medium sticky z-10 ${
+                    fila.modulo.id === null ? 'bg-amber-50 text-amber-700' : 'text-gray-500 bg-white'
                   }`}
-                  style={{ gridColumn: '3 / 4' }}
+                  style={{ gridColumn: '3 / 4', left: ANCHO_FECHA + ANCHO_DIA }}
                   title={fila.modulo.id === null ? 'Sin módulo asignado — pendiente de revisión' : undefined}
                 >
                   {fila.modulo.corto}
@@ -385,6 +396,7 @@ export default function MatrizGrid({
                         onClick={(e) => { e.stopPropagation(); onEditarClase?.(clase); }}
                         compacto={tieneModulos}
                         esReserva={false}
+                        modoLectura={modoLectura}
                       />
                     </div>
                   );
@@ -406,6 +418,7 @@ export default function MatrizGrid({
                         onClick={(e) => { e.stopPropagation(); onClickReserva?.(reserva); }}
                         compacto={tieneModulos}
                         esReserva={true}
+                        modoLectura={modoLectura}
                       />
                     </div>
                   );

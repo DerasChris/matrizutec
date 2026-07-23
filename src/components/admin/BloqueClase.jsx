@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Users, Clock, Bookmark, BookOpen, GraduationCap, Hash, Award, Moon } from 'lucide-react';
 import { colorPorCodigo, TIPOS_CLASE, TIPOS_CLASE_LABEL } from '../../lib/constants';
 import { formatearHora } from '../../utils/dateHelpers';
+import { esDispositivoTactil } from '../../utils/matrizHelpers';
 
 const COLOR_REUNION = '#7c3aed';
 const COLOR_DEFENSA = '#0d9488';
@@ -179,7 +180,7 @@ function TooltipCard({ clase, esReserva, pos }) {
   );
 }
 
-export default function BloqueClase({ clase, onClick, compacto = false, esReserva = false }) {
+export default function BloqueClase({ clase, onClick, compacto = false, esReserva = false, modoLectura = false }) {
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
 
@@ -213,11 +214,25 @@ export default function BloqueClase({ clase, onClick, compacto = false, esReserv
     setPos({ top: r.top, left: r.left, width: r.width, height: r.height });
   }
 
+  // En modo concentración, en un dispositivo táctil no hay hover previo al
+  // clic — el primer toque muestra el tooltip en vez de abrir el editor; un
+  // segundo toque sobre el mismo bloque lo cierra. En desktop (o fuera de
+  // modo concentración) el clic sigue abriendo el editor como siempre.
+  function handleClick(e) {
+    if (modoLectura && esDispositivoTactil()) {
+      e.stopPropagation();
+      if (pos) { setPos(null); return; }
+      onEnter();
+      return;
+    }
+    onClick?.(e);
+  }
+
   return (
     <>
       <button
         ref={btnRef}
-        onClick={onClick}
+        onClick={handleClick}
         onMouseEnter={onEnter}
         onMouseLeave={() => setPos(null)}
         className={`relative w-full h-full text-left rounded text-white px-2 py-1 hover:ring-2 hover:ring-white hover:ring-offset-1 transition-all overflow-hidden flex flex-col justify-center ${
