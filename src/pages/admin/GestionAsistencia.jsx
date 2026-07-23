@@ -255,6 +255,66 @@ function TabPins({ clases, docentes, labMap, onGuardado }) {
 
   const sinPinCount = filas.filter(n => !docentesPorNombre[n]).length;
 
+  // Tiras de papel para repartir el PIN en físico — una por docente (con
+  // todas sus clases en el lab filtrado, o en todos los que dicta si no hay
+  // filtro), pensadas para cortar e imprimir por cada encargado.
+  function imprimirTiras() {
+    const conPin = filas.filter(n => docentesPorNombre[n]);
+    if (conPin.length === 0) { toast.error('No hay docentes con PIN asignado en esta vista'); return; }
+
+    const tiras = conPin.map(nombre => {
+      const clasesDelDocente = clases.filter(c =>
+        c.tipo === TIPOS_CLASE.REGULAR && c.activo !== false &&
+        (c.docente || '').trim() === nombre &&
+        (!filtroLab || c.labId === filtroLab)
+      );
+      const filasClase = clasesDelDocente.map(c => `
+        <div class="clase">
+          <span class="materia">${c.nombreAsignatura}${c.seccion ? ` · Sec. ${c.seccion}` : ''}</span>
+          <span class="horario">${labMap[c.labId]?.nombre || c.labId} · ${(c.diasSemana || []).map(d => DIA_CORTO[d] || d).join('-')} ${c.horaInicio}–${c.horaFin}</span>
+        </div>
+      `).join('') || '<div class="clase"><span class="horario">Sin clases activas en esta vista</span></div>';
+
+      return `
+        <div class="tira">
+          <div class="izq">
+            <p class="label">PIN</p>
+            <p class="pin">${docentesPorNombre[nombre].pin}</p>
+          </div>
+          <div class="der">
+            <p class="nombre">${nombre}</p>
+            ${filasClase}
+          </div>
+        </div>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><title>Tiras de PIN — Asistencia</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 10mm; }
+  .tira { display: flex; gap: 14px; align-items: center; padding: 8px 4px; border-bottom: 1px dashed #999; page-break-inside: avoid; }
+  .izq { width: 90px; text-align: center; flex-shrink: 0; border-right: 1px solid #ddd; padding-right: 12px; }
+  .label { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin: 0; }
+  .pin { font-size: 26px; font-weight: 800; letter-spacing: 3px; font-family: 'Courier New', monospace; margin: 2px 0 0; color: #111; }
+  .der { flex: 1; min-width: 0; }
+  .nombre { font-size: 13px; font-weight: 700; margin: 0 0 3px; color: #111; }
+  .clase { display: flex; gap: 10px; align-items: baseline; font-size: 10px; color: #444; }
+  .clase .materia { font-weight: 600; color: #222; }
+  .clase .horario { color: #666; }
+  @media print { @page { margin: 8mm; } }
+</style></head>
+<body>
+  ${tiras}
+  <script>window.onload = () => window.print();</script>
+</body></html>`;
+
+    const win = window.open('', '_blank', 'width=900,height=1000');
+    if (!win) { toast.error('Permite popups para imprimir'); return; }
+    win.document.write(html);
+    win.document.close();
+  }
+
   async function asignarPinATodos() {
     const pendientes = nombresDistintos.filter(n => !docentesPorNombre[n]);
     if (pendientes.length === 0) { toast('Todos los docentes ya tienen PIN'); return; }
@@ -356,6 +416,13 @@ function TabPins({ clases, docentes, labMap, onGuardado }) {
               <Users size={14} /> Asignar PIN a todos{sinPinCount > 0 ? ` (${sinPinCount})` : ''}
             </>
           )}
+        </button>
+        <button
+          onClick={imprimirTiras}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+          title="Imprimir una tira por docente con su PIN, clase y horario — filtra por lab primero para entregarle al encargado solo las suyas"
+        >
+          <Printer size={14} /> Imprimir tiras
         </button>
       </div>
 
