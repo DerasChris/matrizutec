@@ -525,9 +525,9 @@ function TabQR({ labs }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="flex flex-wrap justify-center gap-4">
         {labs.map(lab => (
-          <div key={lab.id} className="border border-gray-200 rounded-xl p-4 text-center bg-white">
+          <div key={lab.id} className="w-48 border border-gray-200 rounded-xl p-4 text-center bg-white">
             <p className="text-sm font-semibold text-gray-900 mb-3">{lab.nombre}</p>
             <QRCodeCanvas
               value={urlAsistencia(lab.id)}
@@ -536,16 +536,16 @@ function TabQR({ labs }) {
               ref={el => { canvasRefs.current[lab.id] = el; }}
             />
             <p className="text-[10px] text-gray-400 mt-2 break-all">{urlAsistencia(lab.id)}</p>
-            <div className="flex items-center justify-center gap-2 mt-3">
+            <div className="flex flex-col gap-1.5 mt-3">
               <button
                 onClick={() => setLabPantallaCompleta(lab.id)}
-                className="flex items-center gap-1 text-xs px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+                className="flex items-center justify-center gap-1 text-xs px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
               >
                 <Maximize2 size={13} /> Pantalla completa
               </button>
               <button
                 onClick={() => imprimir([lab])}
-                className="flex items-center gap-1 text-xs px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+                className="flex items-center justify-center gap-1 text-xs px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
               >
                 <Printer size={13} /> Imprimir
               </button>
