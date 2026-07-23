@@ -188,10 +188,12 @@ async function obtenerCicloActivo() {
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
-// Paso 1: valida el PIN, sin escribir nada. Devuelve TODAS las clases del
-// docente en ese laboratorio para que elija cuál marcar — nunca bloquea por
-// horario, solo indica cuál está "en horario ahora" para orientar la
-// elección cuando hay varias.
+// Paso 1: valida el PIN, sin escribir nada. Devuelve las clases del docente
+// que SÍ tienen sesión programada hoy en ese laboratorio — "fuera de
+// horario" es para llegar/salir tarde el mismo día, no aplica a cualquier
+// día de la semana. Si hoy no le toca ninguna, igual se devuelven los días
+// recientes sin marcar y el historial, para que pueda marcar un día pasado
+// (con aprobación de jefatura) aunque hoy no tenga clase en este lab.
 exports.buscarClaseParaAsistencia = functions.https.onCall(async (data) => {
   const labId = data?.labId;
   const pin = data?.pin;
@@ -210,18 +212,20 @@ exports.buscarClaseParaAsistencia = functions.https.onCall(async (data) => {
   }
 
   const ahora = ahoraElSalvador();
-  const clases = await obtenerClasesDelDocenteEnLab(admin.firestore(), {
+  const todasLasClases = await obtenerClasesDelDocenteEnLab(admin.firestore(), {
     docenteNombre: docente.nombre,
     labId,
     cicloId: ciclo.id,
   });
 
-  if (clases.length === 0) {
+  if (todasLasClases.length === 0) {
     throw new functions.https.HttpsError(
       'not-found',
       'No tienes clases asignadas en este laboratorio.'
     );
   }
+
+  const clases = todasLasClases.filter(c => claseAplicaEnFecha(c, ahora.fecha, ahora.diaSemanaId));
 
   const db = admin.firestore();
   const clasesConEstado = await Promise.all(clases.map(async (clase) => {
@@ -249,7 +253,7 @@ exports.buscarClaseParaAsistencia = functions.https.onCall(async (data) => {
   // no re-sugerir un día ya pendiente o aprobado).
   const ventana = ventanaRetroactiva(ahora.fecha, 7);
   const combinaciones = [];
-  for (const clase of clases) {
+  for (const clase of todasLasClases) {
     for (const fecha of ventana) {
       const diaSemanaFecha = diaSemanaIdDeFecha(fecha);
       if (claseAplicaEnFecha(clase, fecha, diaSemanaFecha)) {
@@ -367,6 +371,15 @@ exports.registrarAsistencia = functions.https.onCall(async (data) => {
     }
     fecha = fechaRetroactivaRaw;
     esRetroactivo = true;
+  } else if (!claseAplicaEnFecha(clase, ahora.fecha, ahora.diaSemanaId)) {
+    // No es un día en que esta clase tenga sesión — "fuera de horario" es
+    // para llegar/salir tarde el mismo día, no para marcar cualquier día de
+    // la semana. Si es un día pasado que sí le tocaba, debe venir con
+    // fechaRetroactiva (rama de arriba).
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Esta clase no tiene sesión programada hoy.'
+    );
   }
 
   const db = admin.firestore();
