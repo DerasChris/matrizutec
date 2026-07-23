@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { QRCodeCanvas } from 'qrcode.react';
 import {
   QrCode, FileBarChart, RefreshCw, KeyRound, Printer,
-  Download, AlertTriangle, Plus, Search, Users,
+  Download, AlertTriangle, Plus, Search, Users, Maximize2, Minimize2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { obtenerTodosLosCiclos } from '../../services/ciclosService';
@@ -440,15 +440,20 @@ function TabPins({ clases, docentes, labMap, onGuardado }) {
 
 function TabQR({ labs }) {
   const canvasRefs = useRef({});
+  const fullscreenRef = useRef(null);
   const esBuildOnpremise = import.meta.env.BASE_URL !== '/';
-  const baseUrl = window.location.origin;
+  // BASE_URL incluye el subpath del deploy (ej. "/laboratorios/" en IIS) —
+  // sin esto, el QR generado desde el build on-premise apunta a una URL
+  // que no resuelve, porque la app solo está montada bajo ese subpath.
+  const baseUrl = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '');
+  const [labPantallaCompleta, setLabPantallaCompleta] = useState(null);
 
   function urlAsistencia(labId) {
     return `${baseUrl}/asistencia/${labId}`;
   }
 
-  function imprimirTodos() {
-    const bloques = labs.map(lab => {
+  function imprimir(labsAImprimir) {
+    const bloques = labsAImprimir.map(lab => {
       const canvas = canvasRefs.current[lab.id];
       const dataUrl = canvas ? canvas.toDataURL('image/png') : '';
       return `
@@ -482,22 +487,38 @@ function TabQR({ labs }) {
     win.document.close();
   }
 
+  useEffect(() => {
+    if (!labPantallaCompleta) return;
+    fullscreenRef.current?.requestFullscreen?.().catch(() => {});
+    function onFsChange() {
+      if (!document.fullscreenElement) setLabPantallaCompleta(null);
+    }
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, [labPantallaCompleta]);
+
+  function cerrarPantallaCompleta() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    setLabPantallaCompleta(null);
+  }
+
+  const labEnPantalla = labs.find(l => l.id === labPantallaCompleta);
+
   return (
     <div className="space-y-4">
       {esBuildOnpremise && (
-        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
+        <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
+          <QrCode size={16} className="flex-shrink-0 mt-0.5 text-blue-500" />
           <p>
-            Estás viendo esto desde el build de IIS on-premise. El QR se está generando con la URL{' '}
-            <strong>{baseUrl}</strong> — genera e imprime los QR desde el sitio de <strong>Vercel/producción</strong>,
-            no desde aquí, porque el QR es estático y así queda impreso.
+            Los QR se están generando con la URL <strong>{baseUrl}</strong> (dominio institucional).
+            Verifica que sea la dirección correcta antes de imprimir y pegar los QR en los laboratorios.
           </p>
         </div>
       )}
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-600">Cada QR es fijo por laboratorio — imprímelo una vez y pégalo en el lab.</p>
         <button
-          onClick={imprimirTodos}
+          onClick={() => imprimir(labs)}
           className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-utec-primary rounded-lg hover:bg-utec-dark"
         >
           <Printer size={15} /> Imprimir todos
@@ -515,9 +536,46 @@ function TabQR({ labs }) {
               ref={el => { canvasRefs.current[lab.id] = el; }}
             />
             <p className="text-[10px] text-gray-400 mt-2 break-all">{urlAsistencia(lab.id)}</p>
+            <div className="flex items-center justify-center gap-2 mt-3">
+              <button
+                onClick={() => setLabPantallaCompleta(lab.id)}
+                className="flex items-center gap-1 text-xs px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+              >
+                <Maximize2 size={13} /> Pantalla completa
+              </button>
+              <button
+                onClick={() => imprimir([lab])}
+                className="flex items-center gap-1 text-xs px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+              >
+                <Printer size={13} /> Imprimir
+              </button>
+            </div>
           </div>
         ))}
       </div>
+
+      {labEnPantalla && (
+        <div
+          ref={fullscreenRef}
+          className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center gap-6 p-8"
+        >
+          <button
+            onClick={cerrarPantallaCompleta}
+            className="absolute top-6 right-6 flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
+          >
+            <Minimize2 size={16} /> Salir
+          </button>
+          <p className="text-2xl font-bold text-utec-primary">{labEnPantalla.nombre}</p>
+          <QRCodeCanvas value={urlAsistencia(labEnPantalla.id)} size={420} level="M" />
+          <p className="text-sm text-gray-400 break-all">{urlAsistencia(labEnPantalla.id)}</p>
+          <button
+            onClick={() => imprimir([labEnPantalla])}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-utec-primary rounded-lg hover:bg-utec-dark"
+          >
+            <Printer size={15} /> Imprimir
+          </button>
+        </div>
+      )}
     </div>
   );
 }
