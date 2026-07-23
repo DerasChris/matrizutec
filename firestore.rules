@@ -157,5 +157,13 @@ service cloud.firestore {
         && request.resource.data.fecha == resource.data.fecha
         && request.resource.data.alumnosLlegaron == resource.data.alumnosLlegaron;
     }
+
+    // Avisos institucionales (banner urgente al entrar). Cualquier usuario
+    // autenticado puede leerlos — es para todos, docentes incluidos. Solo
+    // la jefa los crea/edita/desactiva.
+    match /avisos/{avisoId} {
+      allow read: if isAuth();
+      allow write: if isAuth() && esJefa() && usuarioActivo();
+    }
   }
 }
