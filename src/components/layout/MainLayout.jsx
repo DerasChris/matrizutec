@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Header from './Header';
 import Sidebar from './Sidebar';
+import AvisoUrgenteModal from './AvisoUrgenteModal';
 
 export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      <AvisoUrgenteModal />
       <Header onMenuClick={() => setSidebarOpen(true)} />
 
       <div className="flex flex-1">

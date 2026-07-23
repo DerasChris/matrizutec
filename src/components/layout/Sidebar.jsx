@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
   LayoutDashboard, CalendarDays, ClipboardList, Users,
-  BookOpen, Inbox, ClipboardCheck, Wrench, X, ActivitySquare, TableProperties, QrCode,
+  BookOpen, Inbox, ClipboardCheck, Wrench, X, ActivitySquare, TableProperties, QrCode, Megaphone,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -23,6 +23,7 @@ const NAV_GROUPS = [
       { to: '/admin/ciclos', label: 'Ciclos', icon: BookOpen, roles: ['encargado', 'jefa'] },
       { to: '/admin/usuarios', label: 'Usuarios', icon: Users, roles: ['jefa'] },
       { to: '/admin/registro', label: 'Registro', icon: ActivitySquare, roles: ['jefa'] },
+      { to: '/admin/avisos', label: 'Avisos', icon: Megaphone, roles: ['jefa'] },
     ],
   },
   {

@@ -21,6 +21,7 @@ import { ROLES } from './lib/constants';
 import Servicios from './pages/Servicios';
 import RegistroActividad from './pages/admin/RegistroActividad';
 import GestionAsistencia from './pages/admin/GestionAsistencia';
+import GestionAvisos from './pages/admin/GestionAvisos';
 
 export default function App() {
   const basename = import.meta.env.BASE_URL === '/'
@@ -117,6 +118,12 @@ export default function App() {
             <Route path="/admin/registro" element={
               <ProtectedRoute rolesPermitidos={[ROLES.JEFA]}>
                 <RegistroActividad />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/admin/avisos" element={
+              <ProtectedRoute rolesPermitidos={[ROLES.JEFA]}>
+                <GestionAvisos />
               </ProtectedRoute>
             } />
           </Route>

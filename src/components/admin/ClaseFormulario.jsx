@@ -52,6 +52,7 @@ export default function ClaseFormulario({
   const [loadingLabs, setLoadingLabs] = useState(false);
   const [laboratoriosDisponibles, setLaboratoriosDisponibles] = useState([]);
   const [labDestino, setLabDestino] = useState(null); // { id, nombre }
+  const [modulosDestino, setModulosDestino] = useState([]); // módulos elegidos si el lab destino tiene módulos
   const [conflictosMover, setConflictosMover] = useState(null); // null | 'checking' | []
   const [moviendo, setMoviendo] = useState(false);
 
@@ -305,6 +306,7 @@ export default function ClaseFormulario({
   async function abrirMoverMode() {
     setMoverMode(true);
     setLabDestino(null);
+    setModulosDestino([]);
     setConflictosMover(null);
     setLoadingLabs(true);
     try {
@@ -317,8 +319,23 @@ export default function ClaseFormulario({
     }
   }
 
+  const destinoTieneModulos = labDestino?.tieneModulos && Array.isArray(labDestino?.modulos) && labDestino.modulos.length > 0;
+
+  // Si el lab destino tiene módulos, la verificación solo puede correr una
+  // vez elegido al menos un módulo — antes de eso no hay nada que chequear
+  // (mover al lab completo casi siempre choca, aunque haya módulos libres).
   async function verificarMover(destino) {
     setLabDestino(destino);
+    const tieneModulos = destino?.tieneModulos && Array.isArray(destino?.modulos) && destino.modulos.length > 0;
+    setModulosDestino([]);
+    if (tieneModulos) {
+      setConflictosMover(null);
+      return;
+    }
+    await chequearConflictosMover(destino, []);
+  }
+
+  async function chequearConflictosMover(destino, modulos) {
     setConflictosMover('checking');
     try {
       const clasesDestino = await obtenerClasesDelLab(destino.id, ciclo.id, true);
@@ -328,7 +345,7 @@ export default function ClaseFormulario({
           diasSemana: claseEditando.diasSemana,
           horaInicio: claseEditando.horaInicio,
           horaFin: claseEditando.horaFin,
-          modulos: [],
+          modulos,
         },
         clasesDestino,
         null
@@ -340,11 +357,24 @@ export default function ClaseFormulario({
     }
   }
 
+  function toggleModuloDestino(moduloId) {
+    const nuevos = modulosDestino.includes(moduloId)
+      ? modulosDestino.filter(x => x !== moduloId)
+      : [...modulosDestino, moduloId];
+    setModulosDestino(nuevos);
+    if (nuevos.length > 0) chequearConflictosMover(labDestino, nuevos);
+    else setConflictosMover(null);
+  }
+
   async function confirmarMovimiento() {
     if (!labDestino || !Array.isArray(conflictosMover) || conflictosMover.length > 0) return;
+    if (destinoTieneModulos && modulosDestino.length === 0) return;
     setMoviendo(true);
     try {
-      await actualizarClase(claseEditando.id, { labId: labDestino.id, modulos: [] });
+      await actualizarClase(claseEditando.id, {
+        labId: labDestino.id,
+        modulos: destinoTieneModulos ? modulosDestino : [],
+      });
       await registrarActividad({
         tipo: 'clase_movida',
         descripcion: `Clase movida: ${claseEditando.nombreAsignatura} (${claseEditando.codigoAsignatura}) de ${lab.nombre} → ${labDestino.nombre}`,
@@ -724,6 +754,34 @@ export default function ClaseFormulario({
                   </div>
                 )}
 
+                {/* Selector de módulos del lab destino — Lab 3/08 tienen varios
+                    módulos independientes; sin elegir cuál, "mover" chocaría
+                    con cualquier clase existente aunque haya módulos libres. */}
+                {destinoTieneModulos && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-gray-600">Módulo(s) en {labDestino.nombre}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {labDestino.modulos.map(m => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => toggleModuloDestino(m.id)}
+                          className={`p-2 rounded-md text-left text-xs border transition-colors ${
+                            modulosDestino.includes(m.id)
+                              ? 'bg-utec-primary text-white border-utec-primary'
+                              : 'bg-white text-gray-700 border-gray-200 hover:border-utec-primary'
+                          }`}
+                        >
+                          {m.nombre}
+                        </button>
+                      ))}
+                    </div>
+                    {modulosDestino.length === 0 && (
+                      <p className="text-xs text-gray-400">Selecciona al menos un módulo para verificar disponibilidad.</p>
+                    )}
+                  </div>
+                )}
+
                 {/* Resultado de verificación */}
                 {conflictosMover === 'checking' && (
                   <div className="flex items-center gap-2 text-xs text-gray-500 py-1">
@@ -779,7 +837,7 @@ export default function ClaseFormulario({
           <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-gray-200 bg-gray-50">
             <button
               type="button"
-              onClick={() => { setMoverMode(false); setLabDestino(null); setConflictosMover(null); }}
+              onClick={() => { setMoverMode(false); setLabDestino(null); setModulosDestino([]); setConflictosMover(null); }}
               className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
             >
               Cancelar movimiento
@@ -789,6 +847,7 @@ export default function ClaseFormulario({
               onClick={confirmarMovimiento}
               disabled={
                 !labDestino ||
+                (destinoTieneModulos && modulosDestino.length === 0) ||
                 conflictosMover === null ||
                 conflictosMover === 'checking' ||
                 (Array.isArray(conflictosMover) && conflictosMover.length > 0) ||
