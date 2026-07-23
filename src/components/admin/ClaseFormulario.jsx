@@ -102,7 +102,7 @@ export default function ClaseFormulario({
     if (!tieneModulos || form.modulos.length === 0) return null;
     return lab.modulos
       .filter(m => form.modulos.includes(m.id))
-      .reduce((sum, m) => sum + (m.equipos || 0), 0);
+      .reduce((sum, m) => sum + (Number(m.equipos) || 0), 0);
   }, [form.modulos, lab, tieneModulos]);
 
   // Algunos errores de validación se muestran bajo una clave agrupada
@@ -576,7 +576,7 @@ export default function ClaseFormulario({
           {tieneModulos && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-medium text-blue-900">Módulos del Lab 03 *</label>
+                <label className="text-sm font-medium text-blue-900">Módulos de {lab?.nombre} *</label>
                 <button
                   type="button"
                   onClick={todosLosModulos}
@@ -598,7 +598,9 @@ export default function ClaseFormulario({
                     }`}
                   >
                     <div className="font-semibold">{m.nombre}</div>
-                    <div className="opacity-80">PC {m.pcInicio}-{m.pcFin} · {m.equipos} eq.</div>
+                    <div className="opacity-80">
+                      {m.pcInicio && m.pcFin ? `PC ${m.pcInicio}-${m.pcFin} · ` : ''}{m.equipos} eq.
+                    </div>
                   </button>
                 ))}
               </div>

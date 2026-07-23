@@ -31,6 +31,18 @@ export const ESTADOS_RESERVA_COLOR = {
   cancelada: { bg: 'bg-gray-50', border: 'border-gray-300', text: 'text-gray-700', badge: 'bg-gray-500' },
 };
 
+export const ESTADOS_ASISTENCIA = {
+  APROBADA: 'aprobada',
+  PENDIENTE: 'pendiente',
+  RECHAZADA: 'rechazada',
+};
+
+export const ESTADOS_ASISTENCIA_LABEL = {
+  aprobada: 'Aprobada',
+  pendiente: 'Pendiente de aprobación',
+  rechazada: 'Rechazada',
+};
+
 export const TIPOS_RESERVA = {
   UNICA: 'unica',
   RANGO: 'rango',

@@ -450,7 +450,7 @@ export default function EditarReservaModal({ reserva, abierto, onCerrar, onGuard
           {tieneModulos && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-medium text-blue-900">Módulos del Lab 03 *</label>
+                <label className="text-xs font-medium text-blue-900">Módulos de {labSel?.nombre} *</label>
                 <button
                   type="button"
                   onClick={() => {
@@ -477,7 +477,7 @@ export default function EditarReservaModal({ reserva, abierto, onCerrar, onGuard
                     }`}
                   >
                     <div className="font-semibold">{m.nombre}</div>
-                    <div className="opacity-80">PC {m.pcInicio}-{m.pcFin}</div>
+                    {m.pcInicio && m.pcFin && <div className="opacity-80">PC {m.pcInicio}-{m.pcFin}</div>}
                   </button>
                 ))}
               </div>

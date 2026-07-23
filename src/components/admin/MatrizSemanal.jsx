@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Moon } from 'lucide-react';
 import { colorPorCodigo } from '../../lib/constants';
+import { esDispositivoTactil } from '../../utils/matrizHelpers';
 
 // A partir de esta hora una clase se considera de salida tardía (después del
 // cierre "normal" de 20:00, aunque el horario operativo llega hasta 20:30).
@@ -111,9 +112,12 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
   const reservasAprobadas = reservas.filter(r => r.estado === 'aprobada');
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div
+      className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col"
+      style={modoLectura && maxHeight ? { height: maxHeight } : undefined}
+    >
       {/* ── Navegación ── */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
         <div className="flex items-center gap-1">
           <button
             onClick={() => setLunes(d => addDias(d, -7))}
@@ -141,8 +145,7 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
       {/* ── Grid ── */}
       <div
         ref={scrollRef}
-        className={modoLectura ? `overflow-auto ${panState ? 'cursor-grabbing' : 'cursor-grab'}` : 'overflow-x-auto'}
-        style={modoLectura && maxHeight ? { maxHeight } : undefined}
+        className={modoLectura ? `flex-1 min-h-0 overflow-auto ${panState ? 'cursor-grabbing' : 'cursor-grab'}` : 'overflow-x-auto'}
         onMouseDown={handlePanDown}
         onMouseMove={handlePanMove}
         onMouseUp={handlePanUp}
@@ -151,8 +154,8 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
         <div className="flex" style={{ minWidth: 560 }}>
 
           {/* Columna de horas */}
-          <div className="w-14 shrink-0 border-r border-gray-200">
-            <div className="h-14 border-b border-gray-200" /> {/* header spacer */}
+          <div className="w-14 shrink-0 border-r border-gray-300">
+            <div className="h-14 border-b border-gray-300" /> {/* header spacer */}
             <div className="relative" style={{ height: TOTAL_H }}>
               {TICKS.filter(t => t.esHora).map(t => (
                 <span
@@ -183,9 +186,9 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
             const bloques = [...clasesDelDia, ...puntualesDelDia];
 
             return (
-              <div key={dia.key} className="flex-1 border-r border-gray-200 last:border-r-0" style={{ minWidth: 80 }}>
+              <div key={dia.key} className="flex-1 border-r border-gray-300 last:border-r-0" style={{ minWidth: 80 }}>
                 {/* Cabecera del día */}
-                <div className={`h-14 flex flex-col items-center justify-center border-b border-gray-200 ${
+                <div className={`h-14 flex flex-col items-center justify-center border-b border-gray-300 ${
                   esHoy ? 'bg-utec-primary' : 'bg-gray-50'
                 }`}>
                   <span className={`text-[10px] font-bold uppercase tracking-wide ${esHoy ? 'text-white/80' : 'text-gray-500'}`}>
@@ -202,7 +205,7 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
                   {TICKS.map(t => (
                     <div
                       key={t.y}
-                      className={`absolute left-0 right-0 ${t.esHora ? 'border-t border-gray-200' : 'border-t border-gray-100'}`}
+                      className={`absolute left-0 right-0 ${t.esHora ? 'border-t border-gray-300' : 'border-t border-gray-200'}`}
                       style={{ top: t.y }}
                     />
                   ))}
@@ -213,11 +216,15 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
                     const height = duracionH(clase.horaInicio, clase.horaFin);
                     const color  = clase.color || colorPorCodigo(clase.codigoAsignatura);
                     const chico  = height < 44;
+                    function handleClick() {
+                      if (modoLectura && esDispositivoTactil()) return;
+                      onClaseClick?.(clase);
+                    }
                     return (
                       <div
                         key={clase.id + dia.key}
                         data-bloque
-                        onClick={() => onClaseClick?.(clase)}
+                        onClick={handleClick}
                         style={{
                           position: 'absolute',
                           top: top + 1,
@@ -234,14 +241,21 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
                         {esSalidaTardia(clase.horaFin) && (
                           <Moon size={9} className="absolute top-0.5 right-0.5 text-amber-200 drop-shadow" />
                         )}
-                        <div className="px-1.5 py-1">
-                          <p className="text-[10px] font-bold text-white leading-tight truncate">
+                        <div className="h-full flex flex-col items-center justify-center text-center px-1.5 py-1 gap-0.5">
+                          <p className="text-[10px] font-bold text-white leading-tight truncate w-full">
                             {clase.nombreAsignatura}
                           </p>
                           {!chico && (
-                            <p className="text-[9px] text-white/75 leading-tight mt-0.5 truncate">
-                              {clase.seccion} · {clase.horaInicio}
-                            </p>
+                            <>
+                              <p className="text-[9px] text-white/80 leading-tight truncate w-full">
+                                {clase.seccion ? `Sec. ${clase.seccion} · ` : ''}{clase.horaInicio}–{clase.horaFin}
+                              </p>
+                              {clase.docente && (
+                                <p className="text-[9px] text-white/70 leading-tight truncate w-full">
+                                  {clase.docente}
+                                </p>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>
@@ -256,6 +270,7 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
                     return (
                       <div
                         key={res.id}
+                        data-bloque
                         style={{
                           position: 'absolute',
                           top: top + 1,
@@ -267,16 +282,23 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
                           border: '2px solid #f59e0b',
                           backgroundColor: '#fffbeb',
                         }}
-                        title={`Reserva: ${res.asignatura || res.motivo}\n${res.horaInicio}–${res.horaFin}`}
+                        title={`Reserva: ${res.asignatura || res.motivo}\n${res.horaInicio}–${res.horaFin}${res.docenteNombre ? `\n${res.docenteNombre}` : ''}`}
                       >
-                        <div className="px-1.5 py-1">
-                          <p className="text-[10px] font-bold text-amber-800 leading-tight truncate">
+                        <div className="h-full flex flex-col items-center justify-center text-center px-1.5 py-1 gap-0.5">
+                          <p className="text-[10px] font-bold text-amber-800 leading-tight truncate w-full">
                             {res.asignatura || res.motivo}
                           </p>
                           {!chico && (
-                            <p className="text-[9px] text-amber-600 leading-tight mt-0.5">
-                              {res.horaInicio}–{res.horaFin}
-                            </p>
+                            <>
+                              <p className="text-[9px] text-amber-600 leading-tight truncate w-full">
+                                {res.horaInicio}–{res.horaFin}
+                              </p>
+                              {res.docenteNombre && (
+                                <p className="text-[9px] text-amber-600 leading-tight truncate w-full">
+                                  {res.docenteNombre}
+                                </p>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>

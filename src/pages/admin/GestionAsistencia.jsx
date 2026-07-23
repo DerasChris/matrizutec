@@ -4,14 +4,15 @@ import * as XLSX from 'xlsx';
 import { QRCodeCanvas } from 'qrcode.react';
 import {
   QrCode, FileBarChart, RefreshCw, KeyRound, Printer,
-  Download, AlertTriangle, Plus, Search, Users,
+  Download, AlertTriangle, Plus, Search, Users, Maximize2, Minimize2,
+  Hourglass, Check, X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { obtenerTodosLosCiclos } from '../../services/ciclosService';
 import { obtenerClasesDelCiclo, obtenerLaboratorios } from '../../services/clasesService';
 import {
   obtenerDocentes, generarPinUnico, guardarPinDocente,
-  obtenerAsistenciasDelCiclo,
+  obtenerAsistenciasDelCiclo, aprobarAsistenciaPendiente, rechazarAsistenciaPendiente,
 } from '../../services/asistenciaService';
 import { ROLES, TIPOS_CLASE } from '../../lib/constants';
 
@@ -25,6 +26,7 @@ const NOMBRE_REVISAR = 'REVISAR';
 export default function GestionAsistencia() {
   const { perfil } = useAuth();
   const esEncargado = perfil?.rol === ROLES.ENCARGADO;
+  const esJefa = perfil?.rol === ROLES.JEFA;
   const labsAsignadosSet = esEncargado ? new Set(perfil?.labsAsignados || []) : null;
 
   const [tab, setTab] = useState('pins');
@@ -76,6 +78,14 @@ export default function GestionAsistencia() {
 
   const cicloSeleccionado = ciclos.find(c => c.id === cicloId) || null;
   const labMap = useMemo(() => Object.fromEntries(labs.map(l => [l.id, l])), [labs]);
+  const asistenciasConfirmadas = useMemo(
+    () => asistencias.filter(a => (a.estado || 'aprobada') !== 'pendiente'),
+    [asistencias]
+  );
+  const asistenciasPendientes = useMemo(
+    () => asistencias.filter(a => a.estado === 'pendiente'),
+    [asistencias]
+  );
 
   if (cargando && labs.length === 0 && !cicloId) {
     return (
@@ -128,6 +138,11 @@ export default function GestionAsistencia() {
               { id: 'pins', label: 'PINs de docentes', icon: KeyRound },
               { id: 'qr', label: 'Generar QR', icon: QrCode },
               { id: 'reportes', label: 'Reportes', icon: FileBarChart },
+              ...(esJefa ? [{
+                id: 'pendientes',
+                label: `Pendientes de aprobar${asistenciasPendientes.length > 0 ? ` (${asistenciasPendientes.length})` : ''}`,
+                icon: Hourglass,
+              }] : []),
             ].map(t => {
               const Icon = t.icon;
               return (
@@ -155,10 +170,13 @@ export default function GestionAsistencia() {
             )}
             {tab === 'reportes' && (
               <TabReportes
-                asistencias={asistencias}
+                asistencias={asistenciasConfirmadas}
                 labMap={labMap}
                 cicloNombre={cicloSeleccionado?.nombre || ''}
               />
+            )}
+            {tab === 'pendientes' && esJefa && (
+              <TabPendientes pendientes={asistenciasPendientes} labMap={labMap} onProcesado={cargar} />
             )}
           </div>
         </>
@@ -440,15 +458,20 @@ function TabPins({ clases, docentes, labMap, onGuardado }) {
 
 function TabQR({ labs }) {
   const canvasRefs = useRef({});
+  const fullscreenRef = useRef(null);
   const esBuildOnpremise = import.meta.env.BASE_URL !== '/';
-  const baseUrl = window.location.origin;
+  // BASE_URL incluye el subpath del deploy (ej. "/laboratorios/" en IIS) —
+  // sin esto, el QR generado desde el build on-premise apunta a una URL
+  // que no resuelve, porque la app solo está montada bajo ese subpath.
+  const baseUrl = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '');
+  const [labPantallaCompleta, setLabPantallaCompleta] = useState(null);
 
   function urlAsistencia(labId) {
     return `${baseUrl}/asistencia/${labId}`;
   }
 
-  function imprimirTodos() {
-    const bloques = labs.map(lab => {
+  function imprimir(labsAImprimir) {
+    const bloques = labsAImprimir.map(lab => {
       const canvas = canvasRefs.current[lab.id];
       const dataUrl = canvas ? canvas.toDataURL('image/png') : '';
       return `
@@ -482,31 +505,47 @@ function TabQR({ labs }) {
     win.document.close();
   }
 
+  useEffect(() => {
+    if (!labPantallaCompleta) return;
+    fullscreenRef.current?.requestFullscreen?.().catch(() => {});
+    function onFsChange() {
+      if (!document.fullscreenElement) setLabPantallaCompleta(null);
+    }
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, [labPantallaCompleta]);
+
+  function cerrarPantallaCompleta() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    setLabPantallaCompleta(null);
+  }
+
+  const labEnPantalla = labs.find(l => l.id === labPantallaCompleta);
+
   return (
     <div className="space-y-4">
       {esBuildOnpremise && (
-        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
+        <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
+          <QrCode size={16} className="flex-shrink-0 mt-0.5 text-blue-500" />
           <p>
-            Estás viendo esto desde el build de IIS on-premise. El QR se está generando con la URL{' '}
-            <strong>{baseUrl}</strong> — genera e imprime los QR desde el sitio de <strong>Vercel/producción</strong>,
-            no desde aquí, porque el QR es estático y así queda impreso.
+            Los QR se están generando con la URL <strong>{baseUrl}</strong> (dominio institucional).
+            Verifica que sea la dirección correcta antes de imprimir y pegar los QR en los laboratorios.
           </p>
         </div>
       )}
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-600">Cada QR es fijo por laboratorio — imprímelo una vez y pégalo en el lab.</p>
         <button
-          onClick={imprimirTodos}
+          onClick={() => imprimir(labs)}
           className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-utec-primary rounded-lg hover:bg-utec-dark"
         >
           <Printer size={15} /> Imprimir todos
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="flex flex-wrap justify-center gap-4">
         {labs.map(lab => (
-          <div key={lab.id} className="border border-gray-200 rounded-xl p-4 text-center bg-white">
+          <div key={lab.id} className="w-48 border border-gray-200 rounded-xl p-4 text-center bg-white">
             <p className="text-sm font-semibold text-gray-900 mb-3">{lab.nombre}</p>
             <QRCodeCanvas
               value={urlAsistencia(lab.id)}
@@ -515,9 +554,46 @@ function TabQR({ labs }) {
               ref={el => { canvasRefs.current[lab.id] = el; }}
             />
             <p className="text-[10px] text-gray-400 mt-2 break-all">{urlAsistencia(lab.id)}</p>
+            <div className="flex flex-col gap-1.5 mt-3">
+              <button
+                onClick={() => setLabPantallaCompleta(lab.id)}
+                className="flex items-center justify-center gap-1 text-xs px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+              >
+                <Maximize2 size={13} /> Pantalla completa
+              </button>
+              <button
+                onClick={() => imprimir([lab])}
+                className="flex items-center justify-center gap-1 text-xs px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+              >
+                <Printer size={13} /> Imprimir
+              </button>
+            </div>
           </div>
         ))}
       </div>
+
+      {labEnPantalla && (
+        <div
+          ref={fullscreenRef}
+          className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center gap-6 p-8"
+        >
+          <button
+            onClick={cerrarPantallaCompleta}
+            className="absolute top-6 right-6 flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
+          >
+            <Minimize2 size={16} /> Salir
+          </button>
+          <p className="text-2xl font-bold text-utec-primary">{labEnPantalla.nombre}</p>
+          <QRCodeCanvas value={urlAsistencia(labEnPantalla.id)} size={420} level="M" />
+          <p className="text-sm text-gray-400 break-all">{urlAsistencia(labEnPantalla.id)}</p>
+          <button
+            onClick={() => imprimir([labEnPantalla])}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-utec-primary rounded-lg hover:bg-utec-dark"
+          >
+            <Printer size={15} /> Imprimir
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -626,7 +702,11 @@ function TabReportes({ asistencias, labMap, cicloNombre }) {
                 <td className="px-3 py-2 whitespace-nowrap font-mono text-gray-500">{a.horaMarcado}</td>
                 <td className="px-3 py-2 text-center text-gray-700">{a.alumnosLlegaron}/{a.inscritos}</td>
                 <td className="px-3 py-2 whitespace-nowrap">
-                  {a.fueraDeHorario ? (
+                  {a.estado === 'rechazada' ? (
+                    <span className="text-[10px] font-semibold text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
+                      Rechazada por jefatura
+                    </span>
+                  ) : a.fueraDeHorario ? (
                     <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
                       Marcó fuera de horario
                     </span>
@@ -641,6 +721,98 @@ function TabReportes({ asistencias, labMap, cicloNombre }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Pestaña: Pendientes de aprobar (solo jefa)
+// ─────────────────────────────────────────────────────────────────
+
+function TabPendientes({ pendientes, labMap, onProcesado }) {
+  const { perfil } = useAuth();
+  const [procesandoId, setProcesandoId] = useState(null);
+  const [notas, setNotas] = useState({});
+
+  async function aprobar(a) {
+    setProcesandoId(a.id);
+    try {
+      await aprobarAsistenciaPendiente(a.id, perfil.uid, perfil.nombre, (notas[a.id] || '').trim());
+      toast.success(`Asistencia del ${a.fecha} aprobada`);
+      await onProcesado();
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al aprobar');
+    } finally {
+      setProcesandoId(null);
+    }
+  }
+
+  async function rechazar(a) {
+    const motivo = (notas[a.id] || '').trim();
+    if (!motivo) { toast.error('Escribe un motivo para rechazar'); return; }
+    setProcesandoId(a.id);
+    try {
+      await rechazarAsistenciaPendiente(a.id, perfil.uid, perfil.nombre, motivo);
+      toast.success(`Asistencia del ${a.fecha} rechazada`);
+      await onProcesado();
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al rechazar');
+    } finally {
+      setProcesandoId(null);
+    }
+  }
+
+  if (pendientes.length === 0) {
+    return (
+      <div className="text-center py-16 text-gray-400 text-sm">
+        No hay marcados retroactivos pendientes de revisión.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {pendientes.map(a => (
+        <div key={a.id} className="border border-amber-200 bg-amber-50/40 rounded-lg p-4">
+          <p className="text-sm font-semibold text-gray-900">
+            {a.nombreAsignatura} <span className="text-gray-400 font-normal">· {a.docente}</span>
+          </p>
+          <p className="text-xs text-gray-600 mt-0.5">
+            {labMap[a.labId]?.nombre || a.labId} · {a.codigoAsignatura}{a.seccion ? ` Sec. ${a.seccion}` : ''}
+          </p>
+          <p className="text-xs text-gray-600 mt-1 font-mono">
+            {a.fecha} ({DIA_CORTO[a.diaSemana] || a.diaSemana}) · Programada {a.horaInicio}–{a.horaFin} · Marcó a las {a.horaMarcado}
+          </p>
+          <p className="text-sm text-gray-800 mt-1.5">
+            <strong>{a.alumnosLlegaron}</strong> alumnos llegaron ({a.inscritos} inscritos)
+          </p>
+          <textarea
+            rows={1}
+            placeholder="Nota (opcional para aprobar, requerido para rechazar)"
+            value={notas[a.id] || ''}
+            onChange={e => setNotas(n => ({ ...n, [a.id]: e.target.value }))}
+            className="w-full mt-2 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-utec-primary"
+          />
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={() => aprobar(a)}
+              disabled={procesandoId === a.id}
+              className="flex-1 px-3 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              <Check size={14} /> Aprobar
+            </button>
+            <button
+              onClick={() => rechazar(a)}
+              disabled={procesandoId === a.id}
+              className="flex-1 px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              <X size={14} /> Rechazar
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

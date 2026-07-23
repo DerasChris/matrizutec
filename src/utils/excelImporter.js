@@ -144,9 +144,9 @@ function validarFila(f) {
     else if (!/^\d{4}-\d{2}-\d{2}$/.test(f.fechaInicio)) errores.push('Fecha_Inicio_Puntual debe ser YYYY-MM-DD');
   }
 
-  if (f.lab === 'lab_03') {
+  if (CONFIG_MODULOS_POR_LAB[f.lab]) {
     if (!f.modulosRaw) {
-      errores.push('Modulos_Lab03 es requerido para lab_03');
+      errores.push(`Modulos_Lab03 es requerido para ${f.lab} (laboratorio con módulos)`);
     } else {
       const mods = f.modulosRaw.split(',').map(m => m.trim().toLowerCase()).filter(Boolean);
       const invalidos = mods.filter(m => !MODULOS_VALIDOS.has(m));
@@ -296,14 +296,25 @@ function esAulaRegularNoLaboratorio(valor) {
   return !/LAB[.\s-]*\d+/i.test(String(valor ?? ''));
 }
 
-// Capacidad física de cada módulo del Lab 03 (confirmado por el usuario).
-// Sirve solo para sugerir módulo cuando el reporte no lo especifica — nunca
-// se asigna en automático porque M2 y M3 comparten capacidad y son
-// indistinguibles solo con el número de inscritos.
-const MODULOS_CAPACIDAD_LAB03 = { m1: 27, m2: 36, m3: 36, m4: 26 };
+// Capacidad física de cada módulo, por laboratorio (confirmado por el
+// usuario). Sirve solo para sugerir módulo cuando el reporte no lo
+// especifica — nunca se asigna en automático porque combinaciones distintas
+// pueden compartir capacidad y ser indistinguibles solo con el número de
+// inscritos.
+const CONFIG_MODULOS_POR_LAB = {
+  lab_03: { m1: 27, m2: 36, m3: 36, m4: 26 },
+  lab_08: { m1: 24, m2: 32, m3: 27 },
+};
 
-function sugerirModulosLab03(inscritos) {
-  const entradas = Object.entries(MODULOS_CAPACIDAD_LAB03);
+function nombreCortoLab(labId) {
+  const n = parseInt(String(labId).split('_')[1], 10);
+  return Number.isNaN(n) ? labId : `Lab ${String(n).padStart(2, '0')}`;
+}
+
+function sugerirModulos(labId, inscritos) {
+  const capacidades = CONFIG_MODULOS_POR_LAB[labId];
+  if (!capacidades) return null;
+  const entradas = Object.entries(capacidades);
   const n = Number(inscritos) || 0;
   if (n <= 0) return null;
 
@@ -445,23 +456,25 @@ export function parsearExcelUTEC(buffer, cicloId) {
     if (errs.length > 0) {
       errores.push({ fila: filaNro, referencia: rawCodigo || rawNombre, errores: errs });
     } else {
-      // Lab 03 tiene 4 módulos físicos; el reporte UTEC casi nunca indica
-      // cuál usa cada sección. Si no viene explícito en el Aula, se sugiere
-      // en observaciones a partir de los inscritos, pero nunca se asigna
-      // automáticamente: queda pendiente de confirmación manual.
+      // Algunos labs (Lab 03, Lab 08) tienen módulos físicos y el reporte
+      // UTEC casi nunca indica cuál usa cada sección. Si no viene explícito
+      // en el Aula, se sugiere en observaciones a partir de los inscritos,
+      // pero nunca se asigna automáticamente: queda pendiente de
+      // confirmación manual.
       const motivos = [];
       let modulos = [];
       let observaciones = '';
 
-      if (labId === 'lab_03') {
+      if (CONFIG_MODULOS_POR_LAB[labId]) {
         if (modulo && MODULOS_VALIDOS.has(`m${modulo}`)) {
           modulos = [`m${modulo}`];
         } else {
           motivos.push('modulo');
-          const sugerido = sugerirModulosLab03(inscritosNum);
+          const etiquetaLab = nombreCortoLab(labId);
+          const sugerido = sugerirModulos(labId, inscritosNum);
           observaciones = sugerido
-            ? `Lab 03 sin módulo especificado en el reporte. Inscritos: ${inscritosNum} — sugerido: ${sugerido.join('+').toUpperCase()} (confirmar).`
-            : `Lab 03 sin módulo especificado en el reporte. Inscritos: ${inscritosNum} — no se pudo sugerir un módulo sin ambigüedad, asignar manualmente.`;
+            ? `${etiquetaLab} sin módulo especificado en el reporte. Inscritos: ${inscritosNum} — sugerido: ${sugerido.join('+').toUpperCase()} (confirmar).`
+            : `${etiquetaLab} sin módulo especificado en el reporte. Inscritos: ${inscritosNum} — no se pudo sugerir un módulo sin ambigüedad, asignar manualmente.`;
         }
       }
 

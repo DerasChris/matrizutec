@@ -42,6 +42,15 @@
         { "fieldPath": "leida", "order": "ASCENDING" },
         { "fieldPath": "creadaEn", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "docente", "order": "ASCENDING" },
+        { "fieldPath": "labId", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -468,7 +468,7 @@ export default function FormularioReserva({ labs, perfil, emailJefa, onCreado })
       {tieneModulos && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-blue-900">Módulos del Lab 03 *</label>
+            <label className="text-sm font-medium text-blue-900">Módulos de {labSel?.nombre} *</label>
             <button
               type="button"
               onClick={() => setForm(f => ({ ...f, modulos: f.modulos.length === labSel.modulos.length ? [] : labSel.modulos.map(m => m.id) }))}
@@ -488,7 +488,9 @@ export default function FormularioReserva({ labs, perfil, emailJefa, onCreado })
                 }`}
               >
                 <div className="font-semibold">{m.nombre}</div>
-                <div className="opacity-80">PC {m.pcInicio}-{m.pcFin} · {m.equipos} eq.</div>
+                <div className="opacity-80">
+                  {m.pcInicio && m.pcFin ? `PC ${m.pcInicio}-${m.pcFin} · ` : ''}{m.equipos} eq.
+                </div>
               </button>
             ))}
           </div>

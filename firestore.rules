@@ -140,13 +140,22 @@ service cloud.firestore {
       allow write: if isAuth() && esAdmin() && usuarioActivo();
     }
 
-    // Registro de asistencia marcado por QR + PIN. Sin escritura de cliente
-    // en ningún caso: solo lo crean/corrigen las Cloud Functions
-    // (buscarClaseParaAsistencia / registrarAsistencia) vía Admin SDK,
-    // que ignora estas reglas — así el registro queda a salvo de manipulación.
+    // Registro de asistencia marcado por QR + PIN. La creación es exclusiva
+    // de la Cloud Function registrarAsistencia vía Admin SDK (el docente que
+    // escanea no tiene sesión de Firebase Auth, así que estas reglas no
+    // pueden protegerla de otra forma). Solo la jefa puede transicionar un
+    // marcado retroactivo de 'pendiente' a 'aprobada'/'rechazada' — no puede
+    // reubicar la clase, la fecha, ni los alumnos marcados, ni tocar un
+    // registro que ya fue decidido.
     match /asistencias/{asistenciaId} {
       allow read: if isAuth() && esAdmin();
-      allow create, update, delete: if false;
+      allow create, delete: if false;
+      allow update: if isAuth() && esJefa() && usuarioActivo()
+        && resource.data.estado == 'pendiente'
+        && request.resource.data.estado in ['aprobada', 'rechazada']
+        && request.resource.data.claseId == resource.data.claseId
+        && request.resource.data.fecha == resource.data.fecha
+        && request.resource.data.alumnosLlegaron == resource.data.alumnosLlegaron;
     }
   }
 }
