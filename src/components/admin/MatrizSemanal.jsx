@@ -112,9 +112,12 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
   const reservasAprobadas = reservas.filter(r => r.estado === 'aprobada');
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div
+      className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col"
+      style={modoLectura && maxHeight ? { height: maxHeight } : undefined}
+    >
       {/* ── Navegación ── */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
         <div className="flex items-center gap-1">
           <button
             onClick={() => setLunes(d => addDias(d, -7))}
@@ -142,8 +145,7 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
       {/* ── Grid ── */}
       <div
         ref={scrollRef}
-        className={modoLectura ? `overflow-auto ${panState ? 'cursor-grabbing' : 'cursor-grab'}` : 'overflow-x-auto'}
-        style={modoLectura && maxHeight ? { maxHeight } : undefined}
+        className={modoLectura ? `flex-1 min-h-0 overflow-auto ${panState ? 'cursor-grabbing' : 'cursor-grab'}` : 'overflow-x-auto'}
         onMouseDown={handlePanDown}
         onMouseMove={handlePanMove}
         onMouseUp={handlePanUp}
@@ -152,8 +154,8 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
         <div className="flex" style={{ minWidth: 560 }}>
 
           {/* Columna de horas */}
-          <div className="w-14 shrink-0 border-r border-gray-200">
-            <div className="h-14 border-b border-gray-200" /> {/* header spacer */}
+          <div className="w-14 shrink-0 border-r border-gray-300">
+            <div className="h-14 border-b border-gray-300" /> {/* header spacer */}
             <div className="relative" style={{ height: TOTAL_H }}>
               {TICKS.filter(t => t.esHora).map(t => (
                 <span
@@ -184,9 +186,9 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
             const bloques = [...clasesDelDia, ...puntualesDelDia];
 
             return (
-              <div key={dia.key} className="flex-1 border-r border-gray-200 last:border-r-0" style={{ minWidth: 80 }}>
+              <div key={dia.key} className="flex-1 border-r border-gray-300 last:border-r-0" style={{ minWidth: 80 }}>
                 {/* Cabecera del día */}
-                <div className={`h-14 flex flex-col items-center justify-center border-b border-gray-200 ${
+                <div className={`h-14 flex flex-col items-center justify-center border-b border-gray-300 ${
                   esHoy ? 'bg-utec-primary' : 'bg-gray-50'
                 }`}>
                   <span className={`text-[10px] font-bold uppercase tracking-wide ${esHoy ? 'text-white/80' : 'text-gray-500'}`}>
@@ -203,7 +205,7 @@ export default function MatrizSemanal({ clases = [], reservas = [], onClaseClick
                   {TICKS.map(t => (
                     <div
                       key={t.y}
-                      className={`absolute left-0 right-0 ${t.esHora ? 'border-t border-gray-200' : 'border-t border-gray-100'}`}
+                      className={`absolute left-0 right-0 ${t.esHora ? 'border-t border-gray-300' : 'border-t border-gray-200'}`}
                       style={{ top: t.y }}
                     />
                   ))}
