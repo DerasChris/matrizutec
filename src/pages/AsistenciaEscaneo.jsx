@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle2, KeyRound, Loader2, AlertTriangle, Users, Clock, ChevronRight } from 'lucide-react';
+import { CheckCircle2, KeyRound, Loader2, AlertTriangle, Users, Clock, ChevronRight, History } from 'lucide-react';
 import { obtenerLaboratorio } from '../services/laboratoriosService';
 import { buscarClaseParaAsistencia, registrarAsistencia } from '../services/asistenciaService';
 
@@ -10,6 +10,63 @@ const DIA_CORTO = { lunes: 'Lu', martes: 'Ma', miercoles: 'Mi', jueves: 'Ju', vi
 function fmtDias(dias) {
   if (!Array.isArray(dias) || dias.length === 0) return '';
   return dias.map(d => DIA_CORTO[d] || d).join(' ');
+}
+
+function ESTADO_TAG(estado) {
+  if (estado === 'pendiente') return <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded shrink-0 ml-2">Pendiente</span>;
+  if (estado === 'rechazada') return <span className="text-[10px] font-semibold text-red-700 bg-red-100 px-1.5 py-0.5 rounded shrink-0 ml-2">Rechazada</span>;
+  return null;
+}
+
+// Alerta de días recientes sin marcar + historial corto — se muestra en las
+// fases SELECCIONAR y CONFIRMAR mientras el docente sigue en el flujo del
+// día de hoy (deja de mostrarse una vez que elige marcar un día retroactivo,
+// para no distraer del formulario de confirmación).
+function AvisosDocente({ diasSinMarcar, historialReciente, onMarcarRetroactivo }) {
+  if (diasSinMarcar.length === 0 && historialReciente.length === 0) return null;
+  return (
+    <div className="mb-4 space-y-3">
+      {diasSinMarcar.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 mb-2">
+            <AlertTriangle size={13} /> Tienes días recientes sin marcar
+          </p>
+          <div className="space-y-1.5">
+            {diasSinMarcar.map(d => (
+              <button
+                key={`${d.claseId}-${d.fecha}`}
+                type="button"
+                onClick={() => onMarcarRetroactivo(d)}
+                className="w-full flex items-center justify-between gap-2 text-left text-xs bg-white border border-amber-200 rounded-lg px-2.5 py-1.5 hover:border-amber-400"
+              >
+                <span className="text-gray-700">
+                  {d.fecha} · {d.nombreAsignatura} <span className="text-gray-400">({d.horaInicio}–{d.horaFin})</span>
+                </span>
+                <span className="text-amber-700 font-medium shrink-0">Marcar</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {historialReciente.length > 0 && (
+        <div>
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase mb-1.5">
+            <History size={12} /> Tu historial reciente en este lab
+          </p>
+          <div className="space-y-1">
+            {historialReciente.map(h => (
+              <div key={`${h.fecha}-${h.codigoAsignatura}-${h.seccion}`} className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-2.5 py-1.5">
+                <span className="text-gray-600 truncate">
+                  {h.fecha} · {h.horaInicio}–{h.horaFin} <span className="text-gray-400">(marcó {h.horaMarcado})</span>
+                </span>
+                {ESTADO_TAG(h.estado)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function AsistenciaEscaneo() {
@@ -24,6 +81,9 @@ export default function AsistenciaEscaneo() {
   const [alumnos, setAlumnos] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [resultado, setResultado] = useState(null);
+  const [diasSinMarcar, setDiasSinMarcar] = useState([]);
+  const [historialReciente, setHistorialReciente] = useState([]);
+  const [fechaRetroactivaSeleccionada, setFechaRetroactivaSeleccionada] = useState(null);
 
   useEffect(() => {
     obtenerLaboratorio(labId)
@@ -33,7 +93,26 @@ export default function AsistenciaEscaneo() {
 
   function elegirClase(c) {
     setClase(c);
+    setFechaRetroactivaSeleccionada(null);
     setAlumnos(c.yaMarcada && c.alumnosPrevios != null ? String(c.alumnosPrevios) : '');
+    setFase(FASES.CONFIRMAR);
+  }
+
+  function marcarRetroactivo(d) {
+    setClase({
+      claseId: d.claseId,
+      nombreAsignatura: d.nombreAsignatura,
+      codigoAsignatura: d.codigoAsignatura,
+      seccion: d.seccion,
+      horaInicio: d.horaInicio,
+      horaFin: d.horaFin,
+      inscritos: d.inscritos,
+      fueraDeHorario: false,
+      yaMarcada: false,
+      alumnosPrevios: null,
+    });
+    setFechaRetroactivaSeleccionada(d.fecha);
+    setAlumnos('');
     setFase(FASES.CONFIRMAR);
   }
 
@@ -45,6 +124,8 @@ export default function AsistenciaEscaneo() {
     try {
       const res = await buscarClaseParaAsistencia({ labId, pin });
       setClases(res.clases);
+      setDiasSinMarcar(res.diasSinMarcar || []);
+      setHistorialReciente(res.historialReciente || []);
       if (res.clases.length === 1) {
         elegirClase(res.clases[0]);
       } else {
@@ -63,7 +144,10 @@ export default function AsistenciaEscaneo() {
     if (!Number.isInteger(n) || n < 0) { return; }
     setGuardando(true);
     try {
-      const res = await registrarAsistencia({ labId, pin, claseId: clase.claseId, alumnosLlegaron: n });
+      const res = await registrarAsistencia({
+        labId, pin, claseId: clase.claseId, alumnosLlegaron: n,
+        fechaRetroactiva: fechaRetroactivaSeleccionada,
+      });
       setResultado(res);
       setFase(FASES.EXITO);
     } catch (err) {
@@ -76,6 +160,7 @@ export default function AsistenciaEscaneo() {
 
   function reiniciar() {
     setPin(''); setErrorPin(''); setClases([]); setClase(null); setAlumnos(''); setResultado(null);
+    setDiasSinMarcar([]); setHistorialReciente([]); setFechaRetroactivaSeleccionada(null);
     setFase(FASES.PIN);
   }
 
@@ -134,6 +219,7 @@ export default function AsistenciaEscaneo() {
 
           {fase === FASES.SELECCIONAR && (
             <div className="space-y-3">
+              <AvisosDocente diasSinMarcar={diasSinMarcar} historialReciente={historialReciente} onMarcarRetroactivo={marcarRetroactivo} />
               <p className="text-sm text-gray-600 text-center">Tienes varias clases en este laboratorio — elige una</p>
               <div className="space-y-2">
                 {clases.map(c => (
@@ -173,6 +259,10 @@ export default function AsistenciaEscaneo() {
 
           {fase === FASES.CONFIRMAR && clase && (
             <form onSubmit={handleConfirmar} className="space-y-4">
+              {!fechaRetroactivaSeleccionada && (
+                <AvisosDocente diasSinMarcar={diasSinMarcar} historialReciente={historialReciente} onMarcarRetroactivo={marcarRetroactivo} />
+              )}
+
               <div className="bg-utec-light rounded-xl p-4 text-center">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">Confirmando asistencia</p>
                 <p className="text-base font-bold text-gray-900 mt-1">{clase.nombreAsignatura}</p>
@@ -180,11 +270,18 @@ export default function AsistenciaEscaneo() {
                   {clase.codigoAsignatura}{clase.seccion ? ` · Sec. ${clase.seccion}` : ''}
                 </p>
                 <p className="flex items-center justify-center gap-1.5 text-xs text-gray-600 mt-1.5">
-                  <Clock size={12} /> {clase.horaInicio}–{clase.horaFin}
+                  <Clock size={12} /> {fechaRetroactivaSeleccionada ? `${fechaRetroactivaSeleccionada} · ` : ''}{clase.horaInicio}–{clase.horaFin}
                 </p>
               </div>
 
-              {clase.fueraDeHorario && (
+              {fechaRetroactivaSeleccionada && (
+                <p className="flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                  <AlertTriangle size={13} className="shrink-0" />
+                  Marcando el {fechaRetroactivaSeleccionada} (retroactivo) — quedará pendiente hasta que jefatura lo apruebe.
+                </p>
+              )}
+
+              {!fechaRetroactivaSeleccionada && clase.fueraDeHorario && (
                 <p className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                   <AlertTriangle size={13} className="shrink-0" />
                   Estás marcando fuera del horario establecido — quedará etiquetado como tal.
@@ -226,24 +323,35 @@ export default function AsistenciaEscaneo() {
               </button>
               <button
                 type="button"
-                onClick={() => (clases.length > 1 ? setFase(FASES.SELECCIONAR) : reiniciar())}
+                onClick={() => (fechaRetroactivaSeleccionada || clases.length > 1 ? setFase(FASES.SELECCIONAR) : reiniciar())}
                 className="w-full text-xs text-gray-400 hover:text-gray-600"
               >
-                {clases.length > 1 ? 'Elegir otra clase' : 'Cancelar'}
+                {fechaRetroactivaSeleccionada || clases.length > 1 ? 'Elegir otra clase' : 'Cancelar'}
               </button>
             </form>
           )}
 
           {fase === FASES.EXITO && resultado && (
             <div className="text-center space-y-3 py-2">
-              <CheckCircle2 size={48} className="text-green-500 mx-auto" />
-              <p className="text-base font-bold text-gray-900">Asistencia registrada</p>
+              {resultado.pendiente ? (
+                <Clock size={48} className="text-amber-500 mx-auto" />
+              ) : (
+                <CheckCircle2 size={48} className="text-green-500 mx-auto" />
+              )}
+              <p className="text-base font-bold text-gray-900">
+                {resultado.pendiente ? 'Quedó pendiente de aprobación' : 'Asistencia registrada'}
+              </p>
               <p className="text-sm text-gray-600">{resultado.nombreAsignatura}</p>
-              <p className="text-xs text-gray-500">{resultado.horaInicio}–{resultado.horaFin}</p>
+              <p className="text-xs text-gray-500">{resultado.fecha ? `${resultado.fecha} · ` : ''}{resultado.horaInicio}–{resultado.horaFin}</p>
               {resultado.fueraDeHorario && (
                 <span className="inline-block text-[10px] font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
                   Marcó fuera de horario
                 </span>
+              )}
+              {resultado.pendiente && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Jefatura revisará este registro del {resultado.fecha} antes de confirmarlo.
+                </p>
               )}
               <p className="text-2xl font-bold text-utec-primary">{resultado.alumnosLlegaron} alumnos</p>
               <button

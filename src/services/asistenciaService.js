@@ -75,16 +75,47 @@ export async function buscarClaseParaAsistencia({ labId, pin }) {
   return res.data;
 }
 
-export async function registrarAsistencia({ labId, pin, claseId, alumnosLlegaron }) {
+export async function registrarAsistencia({ labId, pin, claseId, alumnosLlegaron, fechaRetroactiva = null }) {
   const fn = httpsCallable(functions, 'registrarAsistencia');
-  const res = await fn({ labId, pin, claseId, alumnosLlegaron });
+  const res = await fn({ labId, pin, claseId, alumnosLlegaron, fechaRetroactiva });
   return res.data;
 }
 
 // ── Reportes (colección `asistencias`) ───────────────────────────────────────
+// Incluye docs en cualquier estado (aprobada/pendiente/rechazada/legado sin
+// campo) — quien consume esto decide cómo filtrar por estado.
 
 export async function obtenerAsistenciasDelCiclo(cicloId) {
   const ref = collection(db, COLECCIONES.ASISTENCIAS);
   const snap = await getDocs(query(ref, where('cicloId', '==', cicloId)));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// ── Aprobación de marcados retroactivos ──────────────────────────────────────
+// Escritura directa de cliente (la jefa sí tiene sesión de Firebase Auth) —
+// firestore.rules solo permite este update si el rol es jefa y el doc sigue
+// 'pendiente'. Mismo patrón que aprobarReserva/rechazarReserva.
+
+export async function aprobarAsistenciaPendiente(id, jefaUid, jefaNombre, nota = '') {
+  const ref = doc(db, COLECCIONES.ASISTENCIAS, id);
+  await updateDoc(ref, {
+    estado: 'aprobada',
+    aprobadaPor: jefaUid,
+    aprobadaPorNombre: jefaNombre,
+    aprobadaEn: serverTimestamp(),
+    notaJefa: nota,
+    actualizadaEn: serverTimestamp(),
+  });
+}
+
+export async function rechazarAsistenciaPendiente(id, jefaUid, jefaNombre, motivo = '') {
+  const ref = doc(db, COLECCIONES.ASISTENCIAS, id);
+  await updateDoc(ref, {
+    estado: 'rechazada',
+    rechazadaPor: jefaUid,
+    rechazadaPorNombre: jefaNombre,
+    rechazadaEn: serverTimestamp(),
+    motivoRechazo: motivo,
+    actualizadaEn: serverTimestamp(),
+  });
 }

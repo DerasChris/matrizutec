@@ -123,6 +123,41 @@ function esFueraDeHorario(clase, ahora) {
   return minutosAhora < inicio || minutosAhora > finConGracia;
 }
 
+const DIAS_SEMANA_POR_INDICE = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+
+// Día de semana de una fecha calendario, sin ambigüedad de zona horaria —
+// anclar a mediodía UTC evita que el parseo caiga en el día anterior (El
+// Salvador no tiene horario de verano, así que esto es seguro todo el año).
+function diaSemanaIdDeFecha(fechaISO) {
+  const d = new Date(`${fechaISO}T12:00:00Z`);
+  return DIAS_SEMANA_POR_INDICE[d.getUTCDay()];
+}
+
+function restarDias(fechaISO, n) {
+  const d = new Date(`${fechaISO}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Los últimos `n` días calendario anteriores a `fechaHoy` (sin incluir hoy),
+// del más reciente al más antiguo. Es la ventana server-side contra la que
+// se valida cualquier fecha retroactiva que mande el cliente — nunca se
+// confía en una fecha arbitraria sin este chequeo.
+function ventanaRetroactiva(fechaHoy, n = 7) {
+  return Array.from({ length: n }, (_, i) => restarDias(fechaHoy, i + 1));
+}
+
+// ¿Esta clase tenía sesión programada este día? Mismo criterio que
+// clasesQueAplicanEnFecha en src/utils/matrizHelpers.js (día de semana +
+// rango fechaInicio/fechaFin), reimplementado aquí porque functions/ no
+// importa código de src/ — no evalúa hora, solo el día.
+function claseAplicaEnFecha(clase, fechaISO, diaSemanaId) {
+  if (!Array.isArray(clase.diasSemana) || !clase.diasSemana.includes(diaSemanaId)) return false;
+  if (clase.fechaInicio && fechaISO < clase.fechaInicio) return false;
+  if (clase.fechaFin && fechaISO > clase.fechaFin) return false;
+  return true;
+}
+
 // Todas las clases regulares activas del docente en ese lab/ciclo — sin
 // filtrar por día ni hora. El docente elige cuál marcar; nunca se le
 // bloquea por no estar "en horario", solo se etiqueta el registro.
@@ -209,18 +244,83 @@ exports.buscarClaseParaAsistencia = functions.https.onCall(async (data) => {
   // Las que están en horario ahora primero, para que sean la opción obvia.
   clasesConEstado.sort((a, b) => Number(a.fueraDeHorario) - Number(b.fueraDeHorario));
 
-  return { docente: docente.nombre, clases: clasesConEstado };
+  // Días recientes sin marcar: por cada clase, cada fecha de la ventana en
+  // que aplicaba y no tiene ya un doc de asistencia (en ningún estado, para
+  // no re-sugerir un día ya pendiente o aprobado).
+  const ventana = ventanaRetroactiva(ahora.fecha, 7);
+  const combinaciones = [];
+  for (const clase of clases) {
+    for (const fecha of ventana) {
+      const diaSemanaFecha = diaSemanaIdDeFecha(fecha);
+      if (claseAplicaEnFecha(clase, fecha, diaSemanaFecha)) {
+        combinaciones.push({ clase, fecha, diaSemanaFecha });
+      }
+    }
+  }
+  const chequeos = await Promise.all(combinaciones.map(async ({ clase, fecha, diaSemanaFecha }) => {
+    const existe = await db.collection('asistencias').doc(`${clase.id}_${fecha}`).get();
+    return existe.exists ? null : { clase, fecha, diaSemanaFecha };
+  }));
+  const diasSinMarcar = chequeos
+    .filter(Boolean)
+    .map(({ clase, fecha, diaSemanaFecha }) => ({
+      claseId: clase.id,
+      fecha,
+      diaSemana: diaSemanaFecha,
+      codigoAsignatura: clase.codigoAsignatura || '',
+      nombreAsignatura: clase.nombreAsignatura || '',
+      seccion: clase.seccion || '',
+      horaInicio: clase.horaInicio,
+      horaFin: clase.horaFin,
+      inscritos: clase.inscritos || 0,
+    }))
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+
+  // Últimos 5 registros del docente en ESTE lab (mismo alcance que el QR),
+  // con hora programada y hora real de marcado.
+  const historialSnap = await db.collection('asistencias')
+    .where('docente', '==', docente.nombre)
+    .where('labId', '==', labId)
+    .orderBy('fecha', 'desc')
+    .limit(5)
+    .get();
+  const historialReciente = historialSnap.docs.map((d) => {
+    const h = d.data();
+    return {
+      fecha: h.fecha,
+      diaSemana: h.diaSemana,
+      nombreAsignatura: h.nombreAsignatura || '',
+      codigoAsignatura: h.codigoAsignatura || '',
+      seccion: h.seccion || '',
+      horaInicio: h.horaInicio,
+      horaFin: h.horaFin,
+      horaMarcado: h.horaMarcado,
+      alumnosLlegaron: h.alumnosLlegaron,
+      estado: h.estado || 'aprobada',
+      retroactivo: !!h.retroactivo,
+    };
+  });
+
+  return { docente: docente.nombre, clases: clasesConEstado, diasSinMarcar, historialReciente };
 });
 
 // Paso 2: re-valida PIN + pertenencia de la clase de forma independiente
 // (nunca confía en claseId del cliente sin re-verificar que sea una clase
 // real de ese docente en ese lab) y crea o corrige el registro del día.
 // Siempre permite marcar; solo etiqueta fueraDeHorario si corresponde.
+//
+// Si viene `fechaRetroactiva` (docente marcando un día olvidado, distinto a
+// hoy), la fecha se re-valida por completo en el servidor — nunca se confía
+// en que el cliente la haya calculado bien — y el registro nace en estado
+// 'pendiente' en vez de 'aprobada': queda sujeto a revisión de jefatura
+// antes de contar como asistencia confirmada, porque ya no hay presencia
+// física verificable en tiempo real como en un marcado del mismo día.
 exports.registrarAsistencia = functions.https.onCall(async (data) => {
   const labId = data?.labId;
   const pin = data?.pin;
   const claseId = data?.claseId;
   const alumnos = Number(data?.alumnosLlegaron);
+  const fechaRetroactivaRaw = data?.fechaRetroactiva || null;
 
   if (!labId || !pin || !claseId || !Number.isInteger(alumnos) || alumnos < 0 || alumnos > 500) {
     throw new functions.https.HttpsError('invalid-argument', 'Datos inválidos.');
@@ -251,9 +351,41 @@ exports.registrarAsistencia = functions.https.onCall(async (data) => {
   }
 
   const ahora = ahoraElSalvador();
-  const fueraDeHorario = esFueraDeHorario(clase, ahora);
 
-  await admin.firestore().collection('asistencias').doc(`${clase.id}_${ahora.fecha}`).set({
+  let fecha = ahora.fecha;
+  let esRetroactivo = false;
+  if (fechaRetroactivaRaw && fechaRetroactivaRaw !== ahora.fecha) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaRetroactivaRaw)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Fecha retroactiva inválida.');
+    }
+    if (!ventanaRetroactiva(ahora.fecha, 7).includes(fechaRetroactivaRaw)) {
+      throw new functions.https.HttpsError('invalid-argument', 'La fecha está fuera de la ventana de 7 días permitida.');
+    }
+    const diaSemanaFecha = diaSemanaIdDeFecha(fechaRetroactivaRaw);
+    if (!claseAplicaEnFecha(clase, fechaRetroactivaRaw, diaSemanaFecha)) {
+      throw new functions.https.HttpsError('failed-precondition', 'Esa clase no tenía sesión programada ese día.');
+    }
+    fecha = fechaRetroactivaRaw;
+    esRetroactivo = true;
+  }
+
+  const db = admin.firestore();
+  const docId = `${clase.id}_${fecha}`;
+
+  if (esRetroactivo) {
+    // No se puede sobrescribir un día que jefatura ya decidió — solo se
+    // puede (re)marcar mientras siga pendiente.
+    const existente = await db.collection('asistencias').doc(docId).get();
+    if (existente.exists && existente.data().estado !== 'pendiente') {
+      throw new functions.https.HttpsError('already-exists', 'Ese día ya fue revisado por jefatura y no se puede modificar.');
+    }
+  }
+
+  const fueraDeHorario = esRetroactivo ? false : esFueraDeHorario(clase, ahora);
+  const diaSemana = esRetroactivo ? diaSemanaIdDeFecha(fecha) : ahora.diaSemanaId;
+  const estado = esRetroactivo ? 'pendiente' : 'aprobada';
+
+  await db.collection('asistencias').doc(docId).set({
     claseId: clase.id,
     cicloId: ciclo.id,
     labId,
@@ -261,14 +393,16 @@ exports.registrarAsistencia = functions.https.onCall(async (data) => {
     nombreAsignatura: clase.nombreAsignatura || '',
     seccion: clase.seccion || '',
     docente: docente.nombre,
-    diaSemana: ahora.diaSemanaId,
-    fecha: ahora.fecha,
+    diaSemana,
+    fecha,
     horaInicio: clase.horaInicio,
     horaFin: clase.horaFin,
-    horaMarcado: ahora.horaHHMM,
+    horaMarcado: ahora.horaHHMM, // hora real del clic, siempre — aunque el día sea retroactivo
     alumnosLlegaron: alumnos,
     inscritos: clase.inscritos || 0,
     fueraDeHorario,
+    retroactivo: esRetroactivo,
+    estado,
     marcadoEn: admin.firestore.FieldValue.serverTimestamp(),
   });
 
@@ -277,7 +411,10 @@ exports.registrarAsistencia = functions.https.onCall(async (data) => {
     nombreAsignatura: clase.nombreAsignatura || '',
     horaInicio: clase.horaInicio,
     horaFin: clase.horaFin,
+    fecha,
     alumnosLlegaron: alumnos,
     fueraDeHorario,
+    retroactivo: esRetroactivo,
+    pendiente: esRetroactivo,
   };
 });
