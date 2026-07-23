@@ -454,12 +454,12 @@ export default function ImportarClasesModal({ ciclo, clasesExistentes, perfil, o
                 </div>
               )}
 
-              {/* Banner de módulos de Lab 03 sin confirmar */}
+              {/* Banner de módulos sin confirmar (labs con módulos: Lab 03, Lab 08) */}
               {pendientesModuloCount > 0 && (
                 <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
                   <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
                   <p>
-                    <strong>{pendientesModuloCount} {pendientesModuloCount === 1 ? 'clase de Lab 03' : 'clases de Lab 03'}</strong> sin módulo especificado en el reporte — se importarán sin módulo asignado y con una sugerencia en observaciones. El encargado debe confirmar el módulo (M1–M4) al editar cada clase.
+                    <strong>{pendientesModuloCount} {pendientesModuloCount === 1 ? 'clase' : 'clases'}</strong> en un laboratorio con módulos sin módulo especificado en el reporte — se importarán sin módulo asignado y con una sugerencia en observaciones. El encargado debe confirmar el módulo al editar cada clase.
                   </p>
                 </div>
               )}
