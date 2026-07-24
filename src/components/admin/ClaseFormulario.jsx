@@ -374,6 +374,9 @@ export default function ClaseFormulario({
       await actualizarClase(claseEditando.id, {
         labId: labDestino.id,
         modulos: destinoTieneModulos ? modulosDestino : [],
+        // Un movimiento sin conflicto resuelve por qué estaba "por revisar"
+        // (si lo estaba, ej. tras un movimiento forzado anterior).
+        pendienteRevision: false,
       });
       await registrarActividad({
         tipo: 'clase_movida',
@@ -382,6 +385,43 @@ export default function ClaseFormulario({
         entidad: { tipo: 'clase', id: claseEditando.id },
       });
       toast.success(`Clase movida a ${labDestino.nombre}`);
+      onGuardado?.();
+      onCerrar();
+    } catch {
+      toast.error('Error al mover la clase');
+    } finally {
+      setMoviendo(false);
+    }
+  }
+
+  // Para reordenamientos en cadena (A necesita el lugar de B, B necesita el
+  // de A) no hay forma de mover a ninguno primero sin chocar. En vez de
+  // bloquear, se permite forzar: la clase se mueve igual y la(s) que
+  // estorbaban quedan marcadas "por revisar" (mismo mecanismo que ya existe
+  // al forzar guardado sobre una colisión) — nadie se borra ni queda sin
+  // laboratorio, solo queda una superposición visible para reasignar a mano.
+  async function confirmarMovimientoForzado() {
+    if (!labDestino || !Array.isArray(conflictosMover) || conflictosMover.length === 0) return;
+    if (destinoTieneModulos && modulosDestino.length === 0) return;
+    const ok = confirm(
+      `Hay ${conflictosMover.length} clase(s) en ese horario en ${labDestino.nombre}. Si continúas, esta clase se moverá ` +
+      `de todos modos y la(s) otra(s) quedarán marcadas "por revisar" para reasignarlas manualmente. ¿Continuar?`
+    );
+    if (!ok) return;
+    setMoviendo(true);
+    try {
+      await actualizarClase(claseEditando.id, {
+        labId: labDestino.id,
+        modulos: destinoTieneModulos ? modulosDestino : [],
+      });
+      await marcarColisionesParaRevision(conflictosMover, claseEditando.nombreAsignatura, claseEditando.seccion);
+      await registrarActividad({
+        tipo: 'clase_movida',
+        descripcion: `Clase movida (forzado, con conflicto): ${claseEditando.nombreAsignatura} (${claseEditando.codigoAsignatura}) de ${lab.nombre} → ${labDestino.nombre}. ${conflictosMover.length} clase(s) quedaron pendientes de revisión.`,
+        usuario: perfil,
+        entidad: { tipo: 'clase', id: claseEditando.id },
+      });
+      toast.success(`Clase movida a ${labDestino.nombre} — ${conflictosMover.length} clase(s) quedaron pendientes de revisión`);
       onGuardado?.();
       onCerrar();
     } catch {
@@ -796,15 +836,25 @@ export default function ClaseFormulario({
                   </div>
                 )}
                 {Array.isArray(conflictosMover) && conflictosMover.length > 0 && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 space-y-1">
+                  <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 space-y-2">
                     <p className="text-sm font-semibold text-red-700 flex items-center gap-1.5">
-                      <AlertTriangle size={14} /> Conflicto — no se puede mover a {labDestino?.nombre}
+                      <AlertTriangle size={14} /> Conflicto en {labDestino?.nombre}
                     </p>
-                    {conflictosMover.map((c, i) => (
+                    {conflictosMover.map((col, i) => (
                       <p key={i} className="text-xs text-red-600 pl-1">
-                        • <strong>{c.nombreAsignatura}</strong> Sec. {c.seccion} · {c.diasSemana?.join('-')} · {c.horaInicio}–{c.horaFin}
+                        • <strong>{col.clase?.nombreAsignatura}</strong> Sec. {col.clase?.seccion} · {col.clase?.diasSemana?.join('-')} · {col.clase?.horaInicio}–{col.clase?.horaFin}
+                        {col.modulosComunes ? ` · Módulo(s): ${col.modulosComunes.join(', ')}` : ''}
                       </p>
                     ))}
+                    <button
+                      type="button"
+                      onClick={confirmarMovimientoForzado}
+                      disabled={moviendo || (destinoTieneModulos && modulosDestino.length === 0)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-lg px-3 py-1.5 hover:bg-red-100 disabled:opacity-50 mt-1"
+                    >
+                      <ArrowRightLeft size={12} />
+                      {moviendo ? 'Moviendo...' : 'Forzar movimiento (deja la otra clase pendiente de revisión)'}
+                    </button>
                   </div>
                 )}
               </div>
