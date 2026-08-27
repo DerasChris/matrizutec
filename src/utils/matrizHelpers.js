@@ -1,5 +1,5 @@
 import { FRANJAS_HORARIAS, HORA_INICIO_DIA, SLOT_MINUTOS, DIAS_SEMANA, TIPOS_CLASE } from '../lib/constants';
-import { horaToMinutos, minutosToHora, rangosSesolapan, getDiaSemanaPorIndice, fechaToISO, diasDelMes } from './dateHelpers';
+import { horaToMinutos, minutosToHora, rangosSesolapan, getDiaSemanaPorIndice, fechaToISO, diasDelMes, isoToFecha } from './dateHelpers';
 
 export const TOTAL_SLOTS = FRANJAS_HORARIAS.length;
 
@@ -63,6 +63,42 @@ export function detectarColisiones(claseNueva, clasesExistentes, claseEditandoId
   }
 
   return colisiones;
+}
+
+// Día de semana + vigencia de una clase regular en una fecha, sin filtrar
+// por módulo (para eso ya existe clasesQueAplicanEnFecha, que exige un
+// moduloId exacto o ninguno). Se usa donde solo interesa "¿esta clase tiene
+// sesión ese día?", como el ingreso manual de asistencia.
+export function claseAplicaEnFecha(clase, fechaISO, diaSemanaId) {
+  if (!Array.isArray(clase.diasSemana) || !clase.diasSemana.includes(diaSemanaId)) return false;
+  if (clase.fechaInicio && fechaISO < clase.fechaInicio) return false;
+  if (clase.fechaFin && fechaISO > clase.fechaFin) return false;
+  return true;
+}
+
+// Ocurrencias reales de una clase regular dentro de [desdeISO, hastaISO]
+// (ambos inclusive), acotado también por la vigencia propia de la clase
+// (fechaInicio/fechaFin) si las trae. Día por día, sin aproximación /7 —
+// una semana parcial al inicio/fin puede desviar el conteo según el día de
+// semana en que arranca o termina el rango.
+export function contarOcurrenciasClaseEnRango(clase, desdeISO, hastaISO) {
+  if (!Array.isArray(clase.diasSemana) || clase.diasSemana.length === 0) return 0;
+  const inicioEfectivo = clase.fechaInicio && clase.fechaInicio > desdeISO ? clase.fechaInicio : desdeISO;
+  const finEfectivo = clase.fechaFin && clase.fechaFin < hastaISO ? clase.fechaFin : hastaISO;
+  if (!inicioEfectivo || !finEfectivo || inicioEfectivo > finEfectivo) return 0;
+
+  const diasSemanaSet = new Set(clase.diasSemana);
+  let cursor = isoToFecha(inicioEfectivo);
+  const fin = isoToFecha(finEfectivo);
+  if (!cursor || !fin) return 0;
+
+  let ocurrencias = 0;
+  while (cursor <= fin) {
+    const diaId = getDiaSemanaPorIndice(cursor.getDay())?.id;
+    if (diaId && diasSemanaSet.has(diaId)) ocurrencias++;
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+  }
+  return ocurrencias;
 }
 
 export function clasesDelDiaModulo(clases, dia, moduloId) {
