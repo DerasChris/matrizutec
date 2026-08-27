@@ -24,6 +24,10 @@ function horaAMin(hora) {
   return h * 60 + m;
 }
 
+// Corte simple mañana/tarde a mediodía — suficiente para filtrar rápido,
+// no pretende modelar turnos formales con solape.
+const CORTE_TURNO_MIN = horaAMin('12:00');
+
 function detectarConflictos(clases) {
   const activas = clases.filter(c => c.activo !== false);
   const pares = [];
@@ -105,6 +109,7 @@ export default function GestionCarga() {
   const [busqueda,      setBusqueda]      = useState('');
   const [filtroLabs,    setFiltroLabs]    = useState([]); // array de ids de lab, OR entre sí
   const [filtroDias,    setFiltroDias]    = useState([]); // array de ids de día, OR entre sí
+  const [filtroTurno,   setFiltroTurno]   = useState(''); // '' | 'manana' | 'tarde'
   const [filtroEstado,  setFiltroEstado]  = useState('activas');
   const [soloConflicto, setSoloConflicto] = useState(false);
   const [soloPendientes, setSoloPendientes] = useState(false);
@@ -169,6 +174,8 @@ export default function GestionCarga() {
     if (filtroEstado === 'inactivas') r = r.filter(c => c.activo === false);
     if (filtroLabs.length > 0) r = r.filter(c => filtroLabs.includes(c.labId));
     if (filtroDias.length > 0) r = r.filter(c => (c.diasSemana || []).some(d => filtroDias.includes(d)));
+    if (filtroTurno === 'manana') r = r.filter(c => horaAMin(c.horaInicio) < CORTE_TURNO_MIN);
+    if (filtroTurno === 'tarde')  r = r.filter(c => horaAMin(c.horaInicio) >= CORTE_TURNO_MIN);
     if (soloConflicto) r = r.filter(c => conflictIds.has(c.id));
     if (soloPendientes) r = r.filter(c => c.pendienteRevision && c.activo !== false);
     if (busqueda.trim()) {
@@ -195,7 +202,7 @@ export default function GestionCarga() {
       return ordenDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
     });
     return r;
-  }, [clases, filtroEstado, filtroLabs, filtroDias, busqueda, soloConflicto, soloPendientes, ordenCol, ordenDir, labMap, conflictIds]);
+  }, [clases, filtroEstado, filtroLabs, filtroDias, filtroTurno, busqueda, soloConflicto, soloPendientes, ordenCol, ordenDir, labMap, conflictIds]);
 
   const conflictGroups = useMemo(() => {
     const byLab = {};
@@ -486,6 +493,15 @@ export default function GestionCarga() {
                 </button>
               )}
             </div>
+            <select
+              value={filtroTurno}
+              onChange={e => setFiltroTurno(e.target.value)}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
+            >
+              <option value="">Todos los turnos</option>
+              <option value="manana">Mañana</option>
+              <option value="tarde">Tarde</option>
+            </select>
             <select
               value={filtroEstado}
               onChange={e => setFiltroEstado(e.target.value)}

@@ -22,6 +22,7 @@ import Servicios from './pages/Servicios';
 import RegistroActividad from './pages/admin/RegistroActividad';
 import GestionAsistencia from './pages/admin/GestionAsistencia';
 import GestionAvisos from './pages/admin/GestionAvisos';
+import AgendaHoy from './pages/AgendaHoy';
 
 export default function App() {
   const basename = import.meta.env.BASE_URL === '/'
@@ -54,6 +55,12 @@ export default function App() {
           }>
             <Route path="/" element={<Dashboard />} />
             <Route path="/sin-permiso" element={<SinPermiso />} />
+
+            <Route path="/agenda" element={
+              <ProtectedRoute rolesPermitidos={[ROLES.ENCARGADO, ROLES.JEFA]}>
+                <AgendaHoy />
+              </ProtectedRoute>
+            } />
 
             <Route path="/matriz" element={
               <ProtectedRoute rolesPermitidos={[ROLES.ENCARGADO, ROLES.JEFA]}>
