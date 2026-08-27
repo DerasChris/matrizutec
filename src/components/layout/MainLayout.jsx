@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import AvisoUrgenteModal from './AvisoUrgenteModal';
+import { APP_VERSION } from '../../lib/version';
 
 export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -26,6 +27,10 @@ export default function MainLayout() {
           </footer>
         </div>
       </div>
+
+      <span className="fixed bottom-1 right-1.5 text-[10px] text-gray-300 select-none pointer-events-none z-10">
+        v{APP_VERSION}
+      </span>
     </div>
   );
 }
