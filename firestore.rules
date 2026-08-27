@@ -140,22 +140,42 @@ service cloud.firestore {
       allow write: if isAuth() && esAdmin() && usuarioActivo();
     }
 
-    // Registro de asistencia marcado por QR + PIN. La creación es exclusiva
-    // de la Cloud Function registrarAsistencia vía Admin SDK (el docente que
-    // escanea no tiene sesión de Firebase Auth, así que estas reglas no
-    // pueden protegerla de otra forma). Solo la jefa puede transicionar un
-    // marcado retroactivo de 'pendiente' a 'aprobada'/'rechazada' — no puede
-    // reubicar la clase, la fecha, ni los alumnos marcados, ni tocar un
-    // registro que ya fue decidido.
+    // Un admin (encargado/jefa, con sesión propia) puede ingresar asistencia
+    // a mano cuando el flujo QR+PIN falla — siempre queda 'aprobada' de una
+    // vez (el admin ya es un actor de confianza) y marcada origen:'manual'
+    // para diferenciarla en los reportes. No sustituye ni relaja la validez
+    // del PIN para el flujo normal del docente.
+    function esIngresoManualValido() {
+      return isAuth() && esAdmin() && usuarioActivo()
+        && request.resource.data.origen == 'manual'
+        && request.resource.data.estado == 'aprobada'
+        && request.resource.data.registradoPor == request.auth.uid
+        && request.resource.data.alumnosLlegaron is int
+        && request.resource.data.alumnosLlegaron >= 0
+        && request.resource.data.alumnosLlegaron <= 500;
+    }
+
+    // Registro de asistencia marcado por QR + PIN. La creación normal es
+    // exclusiva de la Cloud Function registrarAsistencia vía Admin SDK (el
+    // docente que escanea no tiene sesión de Firebase Auth, así que estas
+    // reglas no pueden protegerla de otra forma) — Admin SDK ignora estas
+    // reglas siempre, así que el ingreso manual de abajo no lo afecta. Solo
+    // la jefa puede transicionar un marcado retroactivo de 'pendiente' a
+    // 'aprobada'/'rechazada' — no puede reubicar la clase, la fecha, ni los
+    // alumnos marcados, ni tocar un registro que ya fue decidido.
     match /asistencias/{asistenciaId} {
       allow read: if isAuth() && esAdmin();
-      allow create, delete: if false;
-      allow update: if isAuth() && esJefa() && usuarioActivo()
-        && resource.data.estado == 'pendiente'
-        && request.resource.data.estado in ['aprobada', 'rechazada']
-        && request.resource.data.claseId == resource.data.claseId
-        && request.resource.data.fecha == resource.data.fecha
-        && request.resource.data.alumnosLlegaron == resource.data.alumnosLlegaron;
+      allow delete: if false;
+      allow create: if esIngresoManualValido();
+      allow update: if esIngresoManualValido()
+        || (
+          isAuth() && esJefa() && usuarioActivo()
+          && resource.data.estado == 'pendiente'
+          && request.resource.data.estado in ['aprobada', 'rechazada']
+          && request.resource.data.claseId == resource.data.claseId
+          && request.resource.data.fecha == resource.data.fecha
+          && request.resource.data.alumnosLlegaron == resource.data.alumnosLlegaron
+        );
     }
 
     // Avisos institucionales (banner urgente al entrar). Cualquier usuario

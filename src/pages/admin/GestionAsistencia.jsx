@@ -1,10 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
-import * as XLSX from 'xlsx';
 import { QRCodeCanvas } from 'qrcode.react';
 import {
   QrCode, FileBarChart, RefreshCw, KeyRound, Printer,
-  Download, AlertTriangle, Plus, Search, Users, Maximize2, Minimize2,
+  AlertTriangle, Plus, Search, Users, Maximize2, Minimize2,
   Hourglass, Check, X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -15,6 +14,7 @@ import {
   obtenerAsistenciasDelCiclo, aprobarAsistenciaPendiente, rechazarAsistenciaPendiente,
 } from '../../services/asistenciaService';
 import { ROLES, TIPOS_CLASE } from '../../lib/constants';
+import TabReportesAsistencia from './TabReportesAsistencia';
 
 const DIA_CORTO = {
   lunes: 'Lu', martes: 'Ma', miercoles: 'Mi',
@@ -84,6 +84,16 @@ export default function GestionAsistencia() {
   );
   const asistenciasPendientes = useMemo(
     () => asistencias.filter(a => a.estado === 'pendiente'),
+    [asistencias]
+  );
+  // Para reportes de uso/horas: ni pendiente ni rechazada cuentan como
+  // asistencia real (a diferencia de asistenciasConfirmadas, que sí incluye
+  // rechazada porque Detalle la muestra igual, con su tag).
+  const asistenciasValidas = useMemo(
+    () => asistencias.filter(a => {
+      const estado = a.estado || 'aprobada';
+      return estado !== 'pendiente' && estado !== 'rechazada';
+    }),
     [asistencias]
   );
 
@@ -169,10 +179,17 @@ export default function GestionAsistencia() {
               <TabQR labs={labs} />
             )}
             {tab === 'reportes' && (
-              <TabReportes
+              <TabReportesAsistencia
                 asistencias={asistenciasConfirmadas}
+                asistenciasValidas={asistenciasValidas}
+                asistenciasTodas={asistencias}
+                clases={clases}
+                labs={labs}
                 labMap={labMap}
+                ciclo={cicloSeleccionado}
                 cicloNombre={cicloSeleccionado?.nombre || ''}
+                perfil={perfil}
+                onGuardado={cargar}
               />
             )}
             {tab === 'pendientes' && esJefa && (
@@ -661,133 +678,6 @@ function TabQR({ labs }) {
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Pestaña: Reportes
-// ─────────────────────────────────────────────────────────────────
-
-function TabReportes({ asistencias, labMap, cicloNombre }) {
-  const [filtroLab, setFiltroLab] = useState('');
-  const [filtroDocente, setFiltroDocente] = useState('');
-  const [filtroDesde, setFiltroDesde] = useState('');
-  const [filtroHasta, setFiltroHasta] = useState('');
-
-  const filtradas = useMemo(() => {
-    return asistencias
-      .filter(a => !filtroLab || a.labId === filtroLab)
-      .filter(a => !filtroDocente.trim() || a.docente?.toLowerCase().includes(filtroDocente.toLowerCase()))
-      .filter(a => !filtroDesde || a.fecha >= filtroDesde)
-      .filter(a => !filtroHasta || a.fecha <= filtroHasta)
-      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
-  }, [asistencias, filtroLab, filtroDocente, filtroDesde, filtroHasta]);
-
-  function exportar() {
-    if (filtradas.length === 0) { toast.error('No hay registros para exportar'); return; }
-    const filas = filtradas.map(a => ({
-      Fecha: a.fecha,
-      Día: a.diaSemana,
-      Laboratorio: labMap[a.labId]?.nombre || a.labId,
-      Código: a.codigoAsignatura,
-      Materia: a.nombreAsignatura,
-      Sección: a.seccion,
-      Docente: a.docente,
-      'Hora programada': `${a.horaInicio}-${a.horaFin}`,
-      'Hora marcado': a.horaMarcado,
-      'Alumnos llegaron': a.alumnosLlegaron,
-      Inscritos: a.inscritos,
-      Estado: a.fueraDeHorario ? 'Fuera de horario' : 'En horario',
-    }));
-    const ws = XLSX.utils.json_to_sheet(filas);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Asistencia');
-    XLSX.writeFile(wb, `asistencia_${(cicloNombre || 'ciclo').replace(/\s+/g, '_')}.xlsx`);
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 items-center">
-        <select
-          value={filtroLab}
-          onChange={e => setFiltroLab(e.target.value)}
-          className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white"
-        >
-          <option value="">Todos los labs</option>
-          {Object.values(labMap).map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-        </select>
-        <input
-          type="text"
-          placeholder="Buscar docente…"
-          value={filtroDocente}
-          onChange={e => setFiltroDocente(e.target.value)}
-          className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white min-w-40"
-        />
-        <input
-          type="date"
-          value={filtroDesde}
-          onChange={e => setFiltroDesde(e.target.value)}
-          className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white"
-        />
-        <span className="text-gray-400 text-sm">a</span>
-        <input
-          type="date"
-          value={filtroHasta}
-          onChange={e => setFiltroHasta(e.target.value)}
-          className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white"
-        />
-        <button
-          onClick={exportar}
-          className="ml-auto flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
-        >
-          <Download size={14} /> Exportar Excel
-        </button>
-      </div>
-
-      <div className="border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {['Fecha', 'Lab', 'Materia', 'Sección', 'Docente', 'Horario', 'Marcado', 'Alumnos', 'Estado'].map(h => (
-                <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {filtradas.length === 0 && (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400 text-sm">Sin registros de asistencia</td></tr>
-            )}
-            {filtradas.map(a => (
-              <tr key={a.id} className="hover:bg-gray-50">
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">{a.fecha} <span className="text-gray-400">({DIA_CORTO[a.diaSemana] || a.diaSemana})</span></td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-700">{labMap[a.labId]?.nombre || a.labId}</td>
-                <td className="px-3 py-2 text-gray-900 max-w-xs truncate" title={a.nombreAsignatura}>{a.nombreAsignatura}</td>
-                <td className="px-3 py-2 text-gray-600">{a.seccion}</td>
-                <td className="px-3 py-2 text-gray-700">{a.docente}</td>
-                <td className="px-3 py-2 whitespace-nowrap font-mono text-gray-700">{a.horaInicio}–{a.horaFin}</td>
-                <td className="px-3 py-2 whitespace-nowrap font-mono text-gray-500">{a.horaMarcado}</td>
-                <td className="px-3 py-2 text-center text-gray-700">{a.alumnosLlegaron}/{a.inscritos}</td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  {a.estado === 'rechazada' ? (
-                    <span className="text-[10px] font-semibold text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
-                      Rechazada por jefatura
-                    </span>
-                  ) : a.fueraDeHorario ? (
-                    <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
-                      Marcó fuera de horario
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
-                      En horario
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

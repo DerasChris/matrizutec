@@ -12,6 +12,8 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { COLECCIONES } from '../lib/constants';
+import { isoToFecha, getDiaSemanaPorIndice } from '../utils/dateHelpers';
+import { claseAplicaEnFecha } from '../utils/matrizHelpers';
 
 // ── PINs de docentes (colección `docentes`) ─────────────────────────────────
 
@@ -117,5 +119,56 @@ export async function rechazarAsistenciaPendiente(id, jefaUid, jefaNombre, motiv
     rechazadaEn: serverTimestamp(),
     motivoRechazo: motivo,
     actualizadaEn: serverTimestamp(),
+  });
+}
+
+// ── Ingreso manual de asistencia ─────────────────────────────────────────────
+// Para cuando el flujo QR+PIN falla (PIN, teléfono, etc.) — un admin con
+// sesión propia lo registra directo. Escritura de cliente protegida por
+// firestore.rules (exige origen:'manual', estado:'aprobada',
+// registradoPor == uid del que llama). Mismo doc id determinístico
+// `${claseId}_${fecha}` que usa la Cloud Function, así que si ya existe un
+// registro para ese día, esto lo sobreescribe (llamar solo tras confirmar
+// con el usuario).
+
+export async function registrarAsistenciaManual({
+  clase, labId, cicloId, fecha, alumnosLlegaron, adminUid, adminNombre,
+}) {
+  const fechaDate = isoToFecha(fecha);
+  const diaSemanaId = fechaDate ? getDiaSemanaPorIndice(fechaDate.getDay())?.id : null;
+  if (!diaSemanaId) throw new Error('Fecha inválida.');
+
+  if (!claseAplicaEnFecha(clase, fecha, diaSemanaId)) {
+    throw new Error('Esta clase no tiene sesión programada en esa fecha.');
+  }
+
+  const alumnos = Math.round(Number(alumnosLlegaron));
+  if (!Number.isInteger(alumnos) || alumnos < 0 || alumnos > 500) {
+    throw new Error('Cantidad de alumnos inválida.');
+  }
+
+  const ref = doc(db, COLECCIONES.ASISTENCIAS, `${clase.id}_${fecha}`);
+  await setDoc(ref, {
+    claseId: clase.id,
+    cicloId,
+    labId,
+    codigoAsignatura: clase.codigoAsignatura || '',
+    nombreAsignatura: clase.nombreAsignatura || '',
+    seccion: clase.seccion || '',
+    docente: clase.docente || '',
+    diaSemana: diaSemanaId,
+    fecha,
+    horaInicio: clase.horaInicio,
+    horaFin: clase.horaFin,
+    horaMarcado: null,
+    alumnosLlegaron: alumnos,
+    inscritos: clase.inscritos || 0,
+    fueraDeHorario: false,
+    retroactivo: false,
+    estado: 'aprobada',
+    origen: 'manual',
+    registradoPor: adminUid,
+    registradoPorNombre: adminNombre,
+    marcadoEn: serverTimestamp(),
   });
 }

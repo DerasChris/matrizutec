@@ -59,6 +59,10 @@ export function horaToMinutos(hora) {
   return h * 60 + m;
 }
 
+export function duracionHoras(horaInicio, horaFin) {
+  return (horaToMinutos(horaFin) - horaToMinutos(horaInicio)) / 60;
+}
+
 export function minutosToHora(minutos) {
   const h = Math.floor(minutos / 60);
   const m = minutos % 60;
