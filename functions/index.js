@@ -431,3 +431,139 @@ exports.registrarAsistencia = functions.https.onCall(async (data) => {
     pendiente: esRetroactivo,
   };
 });
+
+// ──────────────────────────────────────────────────────────────
+// API externa: recibir asistencia desde otro software
+// ──────────────────────────────────────────────────────────────
+//
+// Endpoint HTTP plano (no requiere Firebase SDK del lado del cliente que
+// llama) protegido por una API key fija en el header X-Api-Key, comparada
+// contra process.env.ASISTENCIA_API_KEY (configurar en functions/.env,
+// nunca en el código). No usa Firebase Auth porque el sistema externo no
+// tiene sesión de usuario — el mismo motivo por el que el flujo QR+PIN
+// tampoco la usa.
+//
+// La clase se identifica por labId + codigoAsignatura + seccion (no por el
+// id interno de Firestore, que el sistema externo no tiene forma de
+// conocer) dentro del ciclo activo (o el que se indique explícitamente).
+// Reusa exactamente la misma validación de "¿esta clase tiene sesión ese
+// día?" que ya usan el flujo QR retroactivo y el ingreso manual.
+
+const LAB_ID_REGEX = /^lab_(0[1-9]|1[0-5])$/;
+const FECHA_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function setCorsHeaders(res) {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Api-Key');
+}
+
+exports.registrarAsistenciaExterna = functions.https.onRequest(async (req, res) => {
+  setCorsHeaders(res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (req.method !== 'POST') {
+    res.status(405).json({ ok: false, error: 'Método no permitido, usa POST.' });
+    return;
+  }
+
+  const apiKey = req.get('X-Api-Key');
+  if (!process.env.ASISTENCIA_API_KEY || apiKey !== process.env.ASISTENCIA_API_KEY) {
+    res.status(401).json({ ok: false, error: 'API key inválida o faltante.' });
+    return;
+  }
+
+  const body = req.body || {};
+  const { labId, codigoAsignatura, fecha, horaMarcado, cicloId: cicloIdRaw } = body;
+  const seccion = body.seccion;
+  const alumnosLlegaron = body.alumnosLlegaron;
+
+  if (!labId || !LAB_ID_REGEX.test(labId)) {
+    res.status(400).json({ ok: false, error: 'labId inválido (esperado lab_01..lab_15).' });
+    return;
+  }
+  if (!codigoAsignatura || typeof codigoAsignatura !== 'string') {
+    res.status(400).json({ ok: false, error: 'codigoAsignatura es requerido.' });
+    return;
+  }
+  if (seccion === undefined || seccion === null || seccion === '') {
+    res.status(400).json({ ok: false, error: 'seccion es requerida.' });
+    return;
+  }
+  if (!fecha || !FECHA_REGEX.test(fecha)) {
+    res.status(400).json({ ok: false, error: 'fecha inválida (formato YYYY-MM-DD).' });
+    return;
+  }
+  const alumnos = Number(alumnosLlegaron);
+  if (!Number.isInteger(alumnos) || alumnos < 0 || alumnos > 500) {
+    res.status(400).json({ ok: false, error: 'alumnosLlegaron inválido (entero 0-500).' });
+    return;
+  }
+
+  const db = admin.firestore();
+
+  let ciclo;
+  if (cicloIdRaw) {
+    const cicloSnap = await db.collection('ciclos').doc(String(cicloIdRaw)).get();
+    if (!cicloSnap.exists) { res.status(404).json({ ok: false, error: 'cicloId no existe.' }); return; }
+    ciclo = { id: cicloSnap.id, ...cicloSnap.data() };
+  } else {
+    ciclo = await obtenerCicloActivo();
+    if (!ciclo) { res.status(412).json({ ok: false, error: 'No hay un ciclo activo.' }); return; }
+  }
+
+  const clasesSnap = await db.collection('clasesRegulares')
+    .where('cicloId', '==', ciclo.id)
+    .where('labId', '==', labId)
+    .where('codigoAsignatura', '==', String(codigoAsignatura).toUpperCase())
+    .where('seccion', '==', String(seccion))
+    .where('tipo', '==', 'regular')
+    .where('activo', '==', true)
+    .get();
+
+  if (clasesSnap.empty) {
+    res.status(404).json({ ok: false, error: 'No se encontró una clase activa con ese labId/codigoAsignatura/seccion en el ciclo.' });
+    return;
+  }
+  if (clasesSnap.size > 1) {
+    res.status(409).json({ ok: false, error: 'Se encontró más de una clase con esos datos — no se pudo identificar de forma única.' });
+    return;
+  }
+  const clase = { id: clasesSnap.docs[0].id, ...clasesSnap.docs[0].data() };
+
+  const diaSemanaId = diaSemanaIdDeFecha(fecha);
+  if (!claseAplicaEnFecha(clase, fecha, diaSemanaId)) {
+    res.status(422).json({ ok: false, error: 'Esa clase no tiene sesión programada en esa fecha.' });
+    return;
+  }
+
+  await db.collection('asistencias').doc(`${clase.id}_${fecha}`).set({
+    claseId: clase.id,
+    cicloId: ciclo.id,
+    labId,
+    codigoAsignatura: clase.codigoAsignatura || '',
+    nombreAsignatura: clase.nombreAsignatura || '',
+    seccion: clase.seccion || '',
+    docente: clase.docente || '',
+    diaSemana: diaSemanaId,
+    fecha,
+    horaInicio: clase.horaInicio,
+    horaFin: clase.horaFin,
+    horaMarcado: horaMarcado || null,
+    alumnosLlegaron: alumnos,
+    inscritos: clase.inscritos || 0,
+    fueraDeHorario: false,
+    retroactivo: false,
+    estado: 'aprobada',
+    origen: 'api_externa',
+    marcadoEn: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  res.status(200).json({
+    ok: true,
+    claseId: clase.id,
+    nombreAsignatura: clase.nombreAsignatura || '',
+    fecha,
+    alumnosLlegaron: alumnos,
+    estado: 'aprobada',
+  });
+});
