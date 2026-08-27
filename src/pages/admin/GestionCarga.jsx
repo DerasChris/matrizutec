@@ -103,7 +103,7 @@ export default function GestionCarga() {
   const [cargando,      setCargando]      = useState(false);
   const [tab,           setTab]           = useState('carga');
   const [busqueda,      setBusqueda]      = useState('');
-  const [filtroLab,     setFiltroLab]     = useState('');
+  const [filtroLabs,    setFiltroLabs]    = useState([]); // array de ids de lab, OR entre sí
   const [filtroDias,    setFiltroDias]    = useState([]); // array de ids de día, OR entre sí
   const [filtroEstado,  setFiltroEstado]  = useState('activas');
   const [soloConflicto, setSoloConflicto] = useState(false);
@@ -167,7 +167,7 @@ export default function GestionCarga() {
     let r = [...clases];
     if (filtroEstado === 'activas')   r = r.filter(c => c.activo !== false);
     if (filtroEstado === 'inactivas') r = r.filter(c => c.activo === false);
-    if (filtroLab)  r = r.filter(c => c.labId === filtroLab);
+    if (filtroLabs.length > 0) r = r.filter(c => filtroLabs.includes(c.labId));
     if (filtroDias.length > 0) r = r.filter(c => (c.diasSemana || []).some(d => filtroDias.includes(d)));
     if (soloConflicto) r = r.filter(c => conflictIds.has(c.id));
     if (soloPendientes) r = r.filter(c => c.pendienteRevision && c.activo !== false);
@@ -195,7 +195,7 @@ export default function GestionCarga() {
       return ordenDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
     });
     return r;
-  }, [clases, filtroEstado, filtroLab, filtroDias, busqueda, soloConflicto, soloPendientes, ordenCol, ordenDir, labMap, conflictIds]);
+  }, [clases, filtroEstado, filtroLabs, filtroDias, busqueda, soloConflicto, soloPendientes, ordenCol, ordenDir, labMap, conflictIds]);
 
   const conflictGroups = useMemo(() => {
     const byLab = {};
@@ -430,14 +430,34 @@ export default function GestionCarga() {
                 className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
               />
             </div>
-            <select
-              value={filtroLab}
-              onChange={e => setFiltroLab(e.target.value)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
-            >
-              <option value="">Todos los labs</option>
-              {labs.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-            </select>
+            <div className="flex items-center gap-1 flex-wrap bg-white border border-gray-300 rounded-lg px-1.5 py-1">
+              {labs.map(l => {
+                const activo = filtroLabs.includes(l.id);
+                return (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => setFiltroLabs(f => activo ? f.filter(x => x !== l.id) : [...f, l.id])}
+                    title={l.nombre}
+                    className={`px-2 h-7 text-xs font-semibold rounded-md transition-colors ${
+                      activo ? 'bg-utec-primary text-white' : 'text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    {String(l.numero ?? l.nombre).padStart(2, '0')}
+                  </button>
+                );
+              })}
+              {filtroLabs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFiltroLabs([])}
+                  title="Limpiar labs"
+                  className="ml-0.5 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-1 bg-white border border-gray-300 rounded-lg px-1.5 py-1">
               {DIAS_SEMANA.map(d => {
                 const activo = filtroDias.includes(d.id);
