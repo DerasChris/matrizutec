@@ -125,11 +125,16 @@ export async function eliminarClasesRegularesDelCiclo(cicloId, cicloNombre, usua
   return { eliminadas: docs.length };
 }
 
+// Solo labs activos — un lab con activo:false (ej. no tiene clase, se
+// oculta del sistema) no debe aparecer en ningún selector, tampoco en
+// Gestión de carga ni Gestión de asistencia. Orden por nombre en el
+// cliente (no en la query) para no necesitar un índice compuesto nuevo.
 export async function obtenerLaboratorios() {
   const snap = await getDocs(
-    query(collection(db, COLECCIONES.LABORATORIOS), orderBy('nombre'))
+    query(collection(db, COLECCIONES.LABORATORIOS), where('activo', '==', true))
   );
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const labs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return labs.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 }
 
 export async function obtenerClasesDelLab(labId, cicloId, soloActivas = true) {
