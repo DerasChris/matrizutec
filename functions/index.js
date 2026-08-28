@@ -83,6 +83,16 @@ const DIA_EN_A_ID = {
   Thursday: 'jueves', Friday: 'viernes', Saturday: 'sabado', Sunday: 'domingo',
 };
 
+// Rangos de vacación que no cuentan como "falta marcar" en ningún flujo
+// (QR+PIN ni Modo Kiosko). Ajustar cada ciclo según el calendario académico
+// real.
+const VACACIONES = [
+  { desde: '2026-08-01', hasta: '2026-08-09' },
+];
+function esFechaDeVacacion(fechaISO) {
+  return VACACIONES.some(v => fechaISO >= v.desde && fechaISO <= v.hasta);
+}
+
 // Cloud Functions corre en UTC por defecto; El Salvador es UTC-6 todo el
 // año (sin horario de verano). Se calcula la hora local explícitamente en
 // vez de confiar en la zona horaria del servidor.
@@ -255,6 +265,7 @@ exports.buscarClaseParaAsistencia = functions.https.onCall(async (data) => {
   const combinaciones = [];
   for (const clase of todasLasClases) {
     for (const fecha of ventana) {
+      if (esFechaDeVacacion(fecha)) continue;
       const diaSemanaFecha = diaSemanaIdDeFecha(fecha);
       if (claseAplicaEnFecha(clase, fecha, diaSemanaFecha)) {
         combinaciones.push({ clase, fecha, diaSemanaFecha });
@@ -364,6 +375,9 @@ exports.registrarAsistencia = functions.https.onCall(async (data) => {
     }
     if (!ventanaRetroactiva(ahora.fecha, 7).includes(fechaRetroactivaRaw)) {
       throw new functions.https.HttpsError('invalid-argument', 'La fecha está fuera de la ventana de 7 días permitida.');
+    }
+    if (esFechaDeVacacion(fechaRetroactivaRaw)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Esa fecha es un día de vacación.');
     }
     const diaSemanaFecha = diaSemanaIdDeFecha(fechaRetroactivaRaw);
     if (!claseAplicaEnFecha(clase, fechaRetroactivaRaw, diaSemanaFecha)) {
@@ -566,4 +580,196 @@ exports.registrarAsistenciaExterna = functions.https.onRequest(async (req, res) 
     alumnosLlegaron: alumnos,
     estado: 'aprobada',
   });
+});
+
+// ──────────────────────────────────────────────────────────────
+// Modo Kiosko: PC fija en el laboratorio, sin PIN
+// ──────────────────────────────────────────────────────────────
+//
+// El encargado muestra la página (URL con un token ofuscado) al docente al
+// final de la clase; el docente elige su clase de una lista y marca cuántos
+// alumnos llegaron — no hay PIN ni sesión, el control de acceso es físico
+// (el encargado media cuándo se muestra la pantalla). Por eso el token
+// nunca se resuelve del lado del cliente: ambas funciones lo reciben como
+// parámetro y lo resuelven leyendo `kioskos/{token}` con Admin SDK — esa
+// colección no tiene lectura pública en firestore.rules.
+
+async function resolverLabIdDesdeToken(db, token) {
+  if (!token) return null;
+  const snap = await db.collection('kioskos').doc(String(token)).get();
+  if (!snap.exists) return null;
+  return snap.data().labId || null;
+}
+
+const TIPOS_ASISTENCIA_KIOSKO = new Set(['clase', 'parcial', 'reposicion']);
+
+exports.obtenerAgendaKiosko = functions.https.onCall(async (data) => {
+  const token = data?.token;
+  const db = admin.firestore();
+  const labId = await resolverLabIdDesdeToken(db, token);
+  if (!labId) {
+    throw new functions.https.HttpsError('not-found', 'Enlace no válido.');
+  }
+
+  const labSnap = await db.collection('laboratorios').doc(labId).get();
+  const labNombre = labSnap.exists ? (labSnap.data().nombre || labId) : labId;
+
+  const ciclo = await obtenerCicloActivo();
+  if (!ciclo) {
+    throw new functions.https.HttpsError('failed-precondition', 'No hay un ciclo activo.');
+  }
+
+  const clasesSnap = await db.collection('clasesRegulares')
+    .where('cicloId', '==', ciclo.id)
+    .where('labId', '==', labId)
+    .where('tipo', '==', 'regular')
+    .where('activo', '==', true)
+    .get();
+  const clases = clasesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const ahora = ahoraElSalvador();
+
+  const clasesHoy = await Promise.all(
+    clases
+      .filter((c) => claseAplicaEnFecha(c, ahora.fecha, ahora.diaSemanaId))
+      .map(async (c) => {
+        const doc = await db.collection('asistencias').doc(`${c.id}_${ahora.fecha}`).get();
+        return {
+          claseId: c.id,
+          codigoAsignatura: c.codigoAsignatura || '',
+          nombreAsignatura: c.nombreAsignatura || '',
+          seccion: c.seccion || '',
+          docente: c.docente || '',
+          horaInicio: c.horaInicio,
+          horaFin: c.horaFin,
+          marcada: doc.exists,
+          alumnosLlegaron: doc.exists ? doc.data().alumnosLlegaron : null,
+          tipo: doc.exists ? (doc.data().tipo || null) : null,
+        };
+      })
+  );
+
+  // Calendario del mes actual, desde el día 1 hasta hoy (nunca fechas
+  // futuras) — un día por fila, con las clases que le tocaban ese día y si
+  // ya se marcaron, saltando los días de vacación.
+  const [anioStr, mesStr, diaStr] = ahora.fecha.split('-');
+  const anio = Number(anioStr);
+  const mesIdx = Number(mesStr) - 1;
+  const hoyNum = Number(diaStr);
+  const calendario = [];
+  for (let dia = 1; dia <= hoyNum; dia++) {
+    const cursor = new Date(anio, mesIdx, dia);
+    const fechaISO = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+    if (esFechaDeVacacion(fechaISO)) continue;
+    const diaSemanaId = diaSemanaIdDeFecha(fechaISO);
+    const clasesDelDia = clases.filter((c) => claseAplicaEnFecha(c, fechaISO, diaSemanaId));
+    if (clasesDelDia.length === 0) continue;
+
+    const detalle = await Promise.all(clasesDelDia.map(async (c) => {
+      const doc = await db.collection('asistencias').doc(`${c.id}_${fechaISO}`).get();
+      return {
+        claseId: c.id,
+        nombreAsignatura: c.nombreAsignatura || '',
+        docente: c.docente || '',
+        horaInicio: c.horaInicio,
+        horaFin: c.horaFin,
+        marcada: doc.exists,
+        alumnosLlegaron: doc.exists ? doc.data().alumnosLlegaron : null,
+      };
+    }));
+    calendario.push({ fecha: fechaISO, clases: detalle });
+  }
+
+  return {
+    lab: { id: labId, nombre: labNombre },
+    clasesHoy,
+    calendario,
+  };
+});
+
+exports.registrarAsistenciaKiosko = functions.https.onCall(async (data) => {
+  const token = data?.token;
+  const claseId = data?.claseId;
+  const fecha = data?.fecha;
+  const tipo = data?.tipo;
+  const alumnos = Number(data?.alumnosLlegaron);
+
+  const db = admin.firestore();
+  const labId = await resolverLabIdDesdeToken(db, token);
+  if (!labId) {
+    throw new functions.https.HttpsError('not-found', 'Enlace no válido.');
+  }
+
+  if (!claseId || !fecha || !TIPOS_ASISTENCIA_KIOSKO.has(tipo)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Datos inválidos.');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Fecha inválida.');
+  }
+  if (!Number.isInteger(alumnos) || alumnos < 0 || alumnos > 500) {
+    throw new functions.https.HttpsError('invalid-argument', 'Cantidad de alumnos inválida.');
+  }
+
+  const ciclo = await obtenerCicloActivo();
+  if (!ciclo) {
+    throw new functions.https.HttpsError('failed-precondition', 'No hay un ciclo activo.');
+  }
+
+  const ahora = ahoraElSalvador();
+  if (fecha > ahora.fecha) {
+    throw new functions.https.HttpsError('invalid-argument', 'No se puede marcar una fecha futura.');
+  }
+  const inicioMes = `${ahora.fecha.slice(0, 7)}-01`;
+  if (fecha < inicioMes) {
+    throw new functions.https.HttpsError('invalid-argument', 'Solo se puede marcar dentro del mes actual.');
+  }
+  if (esFechaDeVacacion(fecha)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Esa fecha es un día de vacación.');
+  }
+
+  const claseSnap = await db.collection('clasesRegulares').doc(claseId).get();
+  if (!claseSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Clase no encontrada.');
+  }
+  const clase = { id: claseSnap.id, ...claseSnap.data() };
+  if (clase.labId !== labId || clase.cicloId !== ciclo.id || clase.tipo !== 'regular' || clase.activo === false) {
+    throw new functions.https.HttpsError('failed-precondition', 'Esa clase no pertenece a este laboratorio/ciclo.');
+  }
+
+  const diaSemanaId = diaSemanaIdDeFecha(fecha);
+  if (!claseAplicaEnFecha(clase, fecha, diaSemanaId)) {
+    throw new functions.https.HttpsError('failed-precondition', 'Esa clase no tiene sesión programada esa fecha.');
+  }
+
+  await db.collection('asistencias').doc(`${clase.id}_${fecha}`).set({
+    claseId: clase.id,
+    cicloId: ciclo.id,
+    labId,
+    codigoAsignatura: clase.codigoAsignatura || '',
+    nombreAsignatura: clase.nombreAsignatura || '',
+    seccion: clase.seccion || '',
+    docente: clase.docente || '',
+    diaSemana: diaSemanaId,
+    fecha,
+    horaInicio: clase.horaInicio,
+    horaFin: clase.horaFin,
+    horaMarcado: ahora.horaHHMM,
+    alumnosLlegaron: alumnos,
+    inscritos: clase.inscritos || 0,
+    fueraDeHorario: false,
+    retroactivo: fecha !== ahora.fecha,
+    estado: 'aprobada',
+    origen: 'kiosko',
+    tipo,
+    marcadoEn: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {
+    ok: true,
+    claseId: clase.id,
+    nombreAsignatura: clase.nombreAsignatura || '',
+    fecha,
+    alumnosLlegaron: alumnos,
+    tipo,
+  };
 });

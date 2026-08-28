@@ -23,6 +23,7 @@ import RegistroActividad from './pages/admin/RegistroActividad';
 import GestionAsistencia from './pages/admin/GestionAsistencia';
 import GestionAvisos from './pages/admin/GestionAvisos';
 import AgendaHoy from './pages/AgendaHoy';
+import KioskoAsistencia from './pages/KioskoAsistencia';
 
 export default function App() {
   const basename = import.meta.env.BASE_URL === '/'
@@ -43,6 +44,7 @@ export default function App() {
           {/* Rutas públicas — sin autenticación requerida */}
           <Route path="/solicitud" element={<SolicitudPublica />} />
           <Route path="/asistencia/:labId" element={<AsistenciaEscaneo />} />
+          <Route path="/lab/:token" element={<KioskoAsistencia />} />
 
           <Route path="/login" element={<Login />} />
           <Route path="/registro" element={<Registro />} />

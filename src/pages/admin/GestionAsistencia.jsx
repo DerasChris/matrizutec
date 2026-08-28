@@ -4,7 +4,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import {
   QrCode, FileBarChart, RefreshCw, KeyRound, Printer,
   AlertTriangle, Plus, Search, Users, Maximize2, Minimize2,
-  Hourglass, Check, X,
+  Hourglass, Check, X, Tv,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { obtenerTodosLosCiclos } from '../../services/ciclosService';
@@ -15,6 +15,7 @@ import {
 } from '../../services/asistenciaService';
 import { ROLES, TIPOS_CLASE } from '../../lib/constants';
 import TabReportesAsistencia from './TabReportesAsistencia';
+import TabKiosko from './TabKiosko';
 
 const DIA_CORTO = {
   lunes: 'Lu', martes: 'Ma', miercoles: 'Mi',
@@ -147,6 +148,7 @@ export default function GestionAsistencia() {
             {[
               { id: 'pins', label: 'PINs de docentes', icon: KeyRound },
               { id: 'qr', label: 'Generar QR', icon: QrCode },
+              { id: 'kiosko', label: 'Asistencia Programada', icon: Tv },
               { id: 'reportes', label: 'Reportes', icon: FileBarChart },
               ...(esJefa ? [{
                 id: 'pendientes',
@@ -177,6 +179,9 @@ export default function GestionAsistencia() {
             )}
             {tab === 'qr' && (
               <TabQR labs={labs} />
+            )}
+            {tab === 'kiosko' && (
+              <TabKiosko labs={labs} perfil={perfil} />
             )}
             {tab === 'reportes' && (
               <TabReportesAsistencia
