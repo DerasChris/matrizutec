@@ -4,12 +4,6 @@ import { httpsCallable } from 'firebase/functions';
 
 const COLECCION = 'kioskos';
 
-function generarToken() {
-  const bytes = new Uint8Array(12);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('').slice(0, 16);
-}
-
 // Uso admin (autenticado) — lee el token vigente de un lab, si existe.
 export async function obtenerTokenKiosko(labId) {
   const ref = collection(db, COLECCION);
@@ -18,16 +12,19 @@ export async function obtenerTokenKiosko(labId) {
   return { token: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
-// Borra los tokens previos de ese lab (invalida el enlace viejo) y crea uno
-// nuevo — un lab tiene un solo enlace de kiosko vigente a la vez.
-export async function generarTokenKiosko(labId, adminUid) {
+// El "token" es simplemente el número del laboratorio (/lab/1, /lab/2...)
+// — a pedido explícito, priorizando que sea fácil de comunicar/escribir en
+// el momento sobre que sea difícil de adivinar. Borra los tokens previos de
+// ese lab (por si tenía uno ofuscado de antes) y crea el nuevo con el
+// número como id — un lab tiene un solo enlace de kiosko vigente a la vez.
+export async function generarTokenKiosko(lab, adminUid) {
   const ref = collection(db, COLECCION);
-  const existentes = await getDocs(query(ref, where('labId', '==', labId)));
+  const existentes = await getDocs(query(ref, where('labId', '==', lab.id)));
   await Promise.all(existentes.docs.map(d => deleteDoc(d.ref)));
 
-  const token = generarToken();
+  const token = String(lab.numero);
   await setDoc(doc(db, COLECCION, token), {
-    labId,
+    labId: lab.id,
     creadoPor: adminUid || null,
     creadoEn: new Date().toISOString(),
   });

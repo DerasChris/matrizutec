@@ -38,7 +38,7 @@ export default function TabKiosko({ labs, perfil }) {
     )) return;
     setProcesandoId(lab.id);
     try {
-      const token = await generarTokenKiosko(lab.id, perfil?.uid);
+      const token = await generarTokenKiosko(lab, perfil?.uid);
       setTokens(t => ({ ...t, [lab.id]: token }));
       toast.success(`Enlace ${esRegenerar ? 'regenerado' : 'generado'} para ${lab.nombre}`);
     } catch (e) {
