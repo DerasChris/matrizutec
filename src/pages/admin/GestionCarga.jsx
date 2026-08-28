@@ -584,9 +584,34 @@ export default function GestionCarga() {
                       } ${inactiva ? 'opacity-50' : ''}`}
                     >
                       <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">
-                        <span className="text-xs bg-gray-100 px-2 py-0.5 rounded font-semibold">
-                          {labMap[clase.labId]?.nombre?.replace('Laboratorio ', 'Lab ') || clase.labId}
-                        </span>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="text-xs bg-gray-100 px-2 py-0.5 rounded font-semibold">
+                            {labMap[clase.labId]?.nombre?.replace('Laboratorio ', 'Lab ') || clase.labId}
+                          </span>
+                          {labMap[clase.labId]?.tieneModulos && (
+                            Array.isArray(clase.modulos) && clase.modulos.length > 0 ? (
+                              clase.modulos.map(modId => {
+                                const mod = labMap[clase.labId]?.modulos?.find(m => m.id === modId);
+                                return (
+                                  <span
+                                    key={modId}
+                                    className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded"
+                                    title={mod?.nombre || modId}
+                                  >
+                                    {mod?.corto || modId.toUpperCase()}
+                                  </span>
+                                );
+                              })
+                            ) : (
+                              <span
+                                className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded"
+                                title="Sin módulo asignado — pendiente de revisión"
+                              >
+                                S/M
+                              </span>
+                            )
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-gray-500 font-mono text-xs whitespace-nowrap">
                         {clase.codigoAsignatura || '—'}
