@@ -185,5 +185,16 @@ service cloud.firestore {
       allow read: if isAuth();
       allow write: if isAuth() && esJefa() && usuarioActivo();
     }
+
+    // Mapeo token -> laboratorio para el Modo Kiosko (PC fija en el lab,
+    // sin PIN). Sin lectura pública en absoluto: la página del kiosko nunca
+    // lee esta colección directo, siempre pasa por las Cloud Functions
+    // (Admin SDK) que resuelven el token del lado del servidor. Si el token
+    // viviera en un campo de `laboratorios` (que sí es de lectura pública)
+    // cualquiera podría listarlo — por eso va en colección aparte.
+    match /kioskos/{token} {
+      allow read: if isAuth() && esAdmin();
+      allow write: if isAuth() && esAdmin() && usuarioActivo();
+    }
   }
 }

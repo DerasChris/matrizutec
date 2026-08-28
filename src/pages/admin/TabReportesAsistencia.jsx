@@ -12,6 +12,11 @@ const DIA_CORTO = {
   jueves: 'Ju', viernes: 'Vi', sabado: 'Sá', domingo: 'Do',
 };
 
+// Campo Tipo (C/P/R) — solo lo trae "Asistencia Programada" (Modo Kiosko
+// internamente), igual que el control de asistencia en papel que reemplaza.
+const TIPO_CORTO = { clase: 'C', parcial: 'P', reposicion: 'R' };
+const TIPO_LABEL = { clase: 'Clase', parcial: 'Parcial', reposicion: 'Reposición' };
+
 // ─────────────────────────────────────────────────────────────────
 // Raíz: sub-tabs dentro de la pestaña "Reportes"
 // ─────────────────────────────────────────────────────────────────
@@ -274,7 +279,8 @@ function SeccionDetalle({ asistencias, asistenciasTodas, clases, labs, labMap, c
       'Alumnos llegaron': a.alumnosLlegaron,
       Inscritos: a.inscritos,
       Estado: a.fueraDeHorario ? 'Fuera de horario' : 'En horario',
-      Origen: a.origen === 'manual' ? 'Manual' : 'QR',
+      Origen: a.origen === 'manual' ? 'Manual' : a.origen === 'kiosko' ? 'Asistencia Programada' : 'QR',
+      Tipo: a.origen === 'kiosko' ? (TIPO_LABEL[a.tipo] || '') : '',
     }));
     const ws = XLSX.utils.json_to_sheet(filas);
     const wb = XLSX.utils.book_new();
@@ -331,14 +337,14 @@ function SeccionDetalle({ asistencias, asistenciasTodas, clases, labs, labMap, c
         <table className="w-full text-sm border-collapse">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              {['Fecha', 'Lab', 'Materia', 'Sección', 'Docente', 'Horario', 'Marcado', 'Alumnos', 'Estado'].map(h => (
+              {['Fecha', 'Lab', 'Materia', 'Sección', 'Docente', 'Horario', 'Marcado', 'Alumnos', 'Tipo', 'Estado'].map(h => (
                 <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtradas.length === 0 && (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400 text-sm">Sin registros de asistencia</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400 text-sm">Sin registros de asistencia</td></tr>
             )}
             {filtradas.map(a => (
               <tr key={a.id} className="hover:bg-gray-50">
@@ -350,6 +356,15 @@ function SeccionDetalle({ asistencias, asistenciasTodas, clases, labs, labMap, c
                 <td className="px-3 py-2 whitespace-nowrap font-mono text-gray-700">{a.horaInicio}–{a.horaFin}</td>
                 <td className="px-3 py-2 whitespace-nowrap font-mono text-gray-500">{a.horaMarcado || '—'}</td>
                 <td className="px-3 py-2 text-center text-gray-700">{a.alumnosLlegaron}/{a.inscritos}</td>
+                <td className="px-3 py-2 text-center">
+                  {a.origen === 'kiosko' && a.tipo ? (
+                    <span className="text-[10px] font-bold text-purple-700 bg-purple-100 w-5 h-5 inline-flex items-center justify-center rounded" title={TIPO_LABEL[a.tipo]}>
+                      {TIPO_CORTO[a.tipo] || '?'}
+                    </span>
+                  ) : (
+                    <span className="text-gray-300">—</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   <div className="flex items-center gap-1 flex-wrap">
                     {a.estado === 'rechazada' ? (
@@ -368,6 +383,14 @@ function SeccionDetalle({ asistencias, asistenciasTodas, clases, labs, labMap, c
                     {a.origen === 'manual' && (
                       <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
                         Manual
+                      </span>
+                    )}
+                    {a.origen === 'kiosko' && (
+                      <span
+                        className="text-[10px] font-semibold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded"
+                        title="Asistencia Programada"
+                      >
+                        Programada
                       </span>
                     )}
                   </div>
