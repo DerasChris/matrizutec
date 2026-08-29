@@ -611,10 +611,11 @@ exports.obtenerAgendaKiosko = functions.https.onCall(async (data) => {
     throw new functions.https.HttpsError('not-found', 'Enlace no válido.');
   }
 
-  const labSnap = await db.collection('laboratorios').doc(labId).get();
+  const [labSnap, ciclo] = await Promise.all([
+    db.collection('laboratorios').doc(labId).get(),
+    obtenerCicloActivo(),
+  ]);
   const labNombre = labSnap.exists ? (labSnap.data().nombre || labId) : labId;
-
-  const ciclo = await obtenerCicloActivo();
   if (!ciclo) {
     throw new functions.https.HttpsError('failed-precondition', 'No hay un ciclo activo.');
   }
@@ -628,35 +629,17 @@ exports.obtenerAgendaKiosko = functions.https.onCall(async (data) => {
   const clases = clasesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
   const ahora = ahoraElSalvador();
-
-  const clasesHoy = await Promise.all(
-    clases
-      .filter((c) => claseAplicaEnFecha(c, ahora.fecha, ahora.diaSemanaId))
-      .map(async (c) => {
-        const doc = await db.collection('asistencias').doc(`${c.id}_${ahora.fecha}`).get();
-        return {
-          claseId: c.id,
-          codigoAsignatura: c.codigoAsignatura || '',
-          nombreAsignatura: c.nombreAsignatura || '',
-          seccion: c.seccion || '',
-          docente: c.docente || '',
-          horaInicio: c.horaInicio,
-          horaFin: c.horaFin,
-          marcada: doc.exists,
-          alumnosLlegaron: doc.exists ? doc.data().alumnosLlegaron : null,
-          tipo: doc.exists ? (doc.data().tipo || null) : null,
-        };
-      })
-  );
+  const clasesDeHoy = clases.filter((c) => claseAplicaEnFecha(c, ahora.fecha, ahora.diaSemanaId));
 
   // Calendario del mes actual, desde el día 1 hasta hoy (nunca fechas
-  // futuras) — un día por fila, con las clases que le tocaban ese día y si
-  // ya se marcaron, saltando los días de vacación.
+  // futuras) — un día por fila, con las clases que le tocaban ese día,
+  // saltando los días de vacación. Solo arma la lista de días/clases acá;
+  // el estado de marcado se resuelve más abajo en una sola llamada batched.
   const [anioStr, mesStr, diaStr] = ahora.fecha.split('-');
   const anio = Number(anioStr);
   const mesIdx = Number(mesStr) - 1;
   const hoyNum = Number(diaStr);
-  const calendario = [];
+  const diasDelCalendario = [];
   for (let dia = 1; dia <= hoyNum; dia++) {
     const cursor = new Date(anio, mesIdx, dia);
     const fechaISO = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
@@ -664,21 +647,64 @@ exports.obtenerAgendaKiosko = functions.https.onCall(async (data) => {
     const diaSemanaId = diaSemanaIdDeFecha(fechaISO);
     const clasesDelDia = clases.filter((c) => claseAplicaEnFecha(c, fechaISO, diaSemanaId));
     if (clasesDelDia.length === 0) continue;
+    diasDelCalendario.push({ fecha: fechaISO, clases: clasesDelDia });
+  }
 
-    const detalle = await Promise.all(clasesDelDia.map(async (c) => {
-      const doc = await db.collection('asistencias').doc(`${c.id}_${fechaISO}`).get();
+  // Todos los documentos de asistencia del mes (calendario + hoy) se piden
+  // en una sola llamada batched (db.getAll) en vez de un .get() secuencial
+  // por día — antes era un round-trip a Firestore por cada día con clases,
+  // lo que hacía lenta la carga del enlace público.
+  const refsPorId = new Map();
+  for (const { fecha, clases: clasesDelDia } of diasDelCalendario) {
+    for (const c of clasesDelDia) {
+      const id = `${c.id}_${fecha}`;
+      if (!refsPorId.has(id)) refsPorId.set(id, db.collection('asistencias').doc(id));
+    }
+  }
+  for (const c of clasesDeHoy) {
+    const id = `${c.id}_${ahora.fecha}`;
+    if (!refsPorId.has(id)) refsPorId.set(id, db.collection('asistencias').doc(id));
+  }
+
+  const idsOrdenados = [...refsPorId.keys()];
+  const asistenciaDocs = idsOrdenados.length > 0
+    ? await db.getAll(...idsOrdenados.map((id) => refsPorId.get(id)))
+    : [];
+  const asistenciaPorId = new Map(idsOrdenados.map((id, i) => [id, asistenciaDocs[i]]));
+
+  const clasesHoy = clasesDeHoy.map((c) => {
+    const doc = asistenciaPorId.get(`${c.id}_${ahora.fecha}`);
+    const existe = doc?.exists || false;
+    return {
+      claseId: c.id,
+      codigoAsignatura: c.codigoAsignatura || '',
+      nombreAsignatura: c.nombreAsignatura || '',
+      seccion: c.seccion || '',
+      docente: c.docente || '',
+      horaInicio: c.horaInicio,
+      horaFin: c.horaFin,
+      marcada: existe,
+      alumnosLlegaron: existe ? doc.data().alumnosLlegaron : null,
+      tipo: existe ? (doc.data().tipo || null) : null,
+    };
+  });
+
+  const calendario = diasDelCalendario.map(({ fecha, clases: clasesDelDia }) => ({
+    fecha,
+    clases: clasesDelDia.map((c) => {
+      const doc = asistenciaPorId.get(`${c.id}_${fecha}`);
+      const existe = doc?.exists || false;
       return {
         claseId: c.id,
         nombreAsignatura: c.nombreAsignatura || '',
         docente: c.docente || '',
         horaInicio: c.horaInicio,
         horaFin: c.horaFin,
-        marcada: doc.exists,
-        alumnosLlegaron: doc.exists ? doc.data().alumnosLlegaron : null,
+        marcada: existe,
+        alumnosLlegaron: existe ? doc.data().alumnosLlegaron : null,
       };
-    }));
-    calendario.push({ fecha: fechaISO, clases: detalle });
-  }
+    }),
+  }));
 
   return {
     lab: { id: labId, nombre: labNombre },
