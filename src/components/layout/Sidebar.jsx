@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   LayoutDashboard, CalendarDays, ClipboardList, Users,
   BookOpen, Inbox, ClipboardCheck, Wrench, X, ActivitySquare, TableProperties, QrCode, Megaphone,
-  CalendarClock,
+  CalendarClock, BarChart3,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -22,6 +22,7 @@ const NAV_GROUPS = [
       { to: '/matriz', label: 'Matriz mensual', icon: CalendarDays, roles: ['encargado', 'jefa'] },
       { to: '/admin/carga', label: 'Carga académica', icon: TableProperties, roles: ['encargado', 'jefa'] },
       { to: '/admin/asistencia', label: 'Asistencia', icon: QrCode, roles: ['encargado', 'jefa'] },
+      { to: '/admin/estadisticas', label: 'Estadísticas', icon: BarChart3, roles: ['encargado', 'jefa'] },
       { to: '/admin/ciclos', label: 'Ciclos', icon: BookOpen, roles: ['encargado', 'jefa'] },
       { to: '/admin/usuarios', label: 'Usuarios', icon: Users, roles: ['jefa'] },
       { to: '/admin/registro', label: 'Registro', icon: ActivitySquare, roles: ['jefa'] },

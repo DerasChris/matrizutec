@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight, Printer, CalendarDays, LayoutGrid, CalendarPlus, Maximize2, X } from 'lucide-react';
+import { Plus, RefreshCw, Loader2, Info, ChevronLeft, ChevronRight, Printer, CalendarDays, LayoutGrid, CalendarPlus, Maximize2, X, Bus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { obtenerLaboratorios, obtenerCicloActivo } from '../../services/laboratoriosService';
 import { ROLES, MESES, TIPOS_CLASE, colorPorCodigo } from '../../lib/constants';
@@ -128,6 +128,7 @@ export default function MatrizLab() {
 
   const [eventoFormAbierto,  setEventoFormAbierto]  = useState(false);
   const [eventoEditando,     setEventoEditando]     = useState(null);
+  const [tipoNuevoEvento,    setTipoNuevoEvento]    = useState(null);
 
   useEffect(() => { cargarBase(); }, []);
   useEffect(() => { if (labSel && ciclo) cargar(); }, [labSel, ciclo, mes, anio]);
@@ -206,7 +207,7 @@ export default function MatrizLab() {
   }
 
   function abrirEditar(clase) {
-    if (clase.tipo === TIPOS_CLASE.REUNION || clase.tipo === TIPOS_CLASE.DEFENSA) {
+    if (clase.tipo === TIPOS_CLASE.REUNION || clase.tipo === TIPOS_CLASE.DEFENSA || clase.tipo === TIPOS_CLASE.TOUR) {
       setEventoEditando(clase);
       setEventoFormAbierto(true);
       return;
@@ -385,10 +386,17 @@ export default function MatrizLab() {
           </button>
 
           <button
-            onClick={() => { setEventoEditando(null); setEventoFormAbierto(true); }}
+            onClick={() => { setTipoNuevoEvento(null); setEventoEditando(null); setEventoFormAbierto(true); }}
             className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 flex items-center gap-1.5 text-sm font-medium"
           >
             <CalendarPlus size={16} /> Evento especial
+          </button>
+
+          <button
+            onClick={() => { setTipoNuevoEvento(TIPOS_CLASE.TOUR); setEventoEditando(null); setEventoFormAbierto(true); }}
+            className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-1.5 text-sm font-medium"
+          >
+            <Bus size={16} /> Agregar tour
           </button>
         </div>
       </div>
@@ -557,7 +565,7 @@ export default function MatrizLab() {
                 {eventoEditando ? 'Editar evento especial' : 'Nuevo evento especial'}
               </h2>
               <button
-                onClick={() => { setEventoFormAbierto(false); setEventoEditando(null); }}
+                onClick={() => { setEventoFormAbierto(false); setEventoEditando(null); setTipoNuevoEvento(null); }}
                 className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
               >
                 ✕
@@ -569,8 +577,9 @@ export default function MatrizLab() {
                 cicloId={ciclo?.id}
                 eventoEditando={eventoEditando}
                 labs={labs}
-                onGuardado={() => { setEventoFormAbierto(false); setEventoEditando(null); cargar(); }}
-                onCerrar={() => { setEventoFormAbierto(false); setEventoEditando(null); }}
+                tipoInicial={tipoNuevoEvento || TIPOS_CLASE.REUNION}
+                onGuardado={() => { setEventoFormAbierto(false); setEventoEditando(null); setTipoNuevoEvento(null); cargar(); }}
+                onCerrar={() => { setEventoFormAbierto(false); setEventoEditando(null); setTipoNuevoEvento(null); }}
               />
             </div>
           </aside>

@@ -1,6 +1,6 @@
-import { TIPOS_CLASE } from '../lib/constants';
 import { rangosSesolapan } from './dateHelpers';
 import { obtenerDiaSemanaDeFecha } from './expansorOcurrencias';
+import { TIPOS_FECHA_EXACTA } from './matrizHelpers';
 
 function modulosColisionan(modA, modB) {
   const a = Array.isArray(modA) ? modA : [];
@@ -26,7 +26,7 @@ export function validarConflictosReserva({
       if (clase.activo === false) continue;
 
       const aplicaPorTipo =
-        clase.tipo === TIPOS_CLASE.PUNTUAL
+        TIPOS_FECHA_EXACTA.has(clase.tipo)
           ? clase.fechaInicio === fechaISO
           : Array.isArray(clase.diasSemana) &&
             clase.diasSemana.includes(diaSemana?.id) &&

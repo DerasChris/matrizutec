@@ -73,6 +73,7 @@ export const TIPOS_CLASE = {
   PUNTUAL: 'puntual',
   REUNION: 'reunion',
   DEFENSA: 'defensa',
+  TOUR: 'tour',
 };
 
 export const TIPOS_CLASE_LABEL = {
@@ -80,6 +81,7 @@ export const TIPOS_CLASE_LABEL = {
   puntual: 'Práctica puntual (un solo día)',
   reunion: 'Reunión',
   defensa: 'Defensa de proyecto / tesis',
+  tour: 'Tour institucional',
 };
 
 export const TIPOS_CICLO = [
