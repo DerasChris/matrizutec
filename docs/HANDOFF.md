@@ -1,8 +1,9 @@
 # Handoff de LabTrack Horarios
 
-Actualizado: 2026-07-20
+Actualizado: 2026-08-28
 Rama observada: `codex/iis-onpremise`
 Rama productiva preservada: `main`
+Versión visible de la app (esquina inferior): `3.5.9`
 
 ## Estado del repositorio
 
@@ -34,10 +35,21 @@ Rama productiva preservada: `main`
 - Gestión de ciclos C01, C02 y C03.
 - Importación Excel en tres formatos.
 - Fusión de carga, detección/resolución de conflictos y snapshots restaurables.
-- Gestión global de carga académica.
+- Gestión global de carga académica, con filtro por tipo (regular/tour/reunión/defensa/puntual) y badges visuales.
 - Log de actividad.
 - Notificaciones personales y alertas admin en tiempo real.
 - Exportación imprimible de matriz.
+- Indicador de versión visible (esquina inferior derecha, `src/lib/version.js`; +1 por cambio, rollover al llegar a 10 en el último dígito).
+- "Agenda del día" (`/agenda`): vista compacta por lab propio del encargado, oculta labs sin actividad, indicador "En curso", filtro de turno.
+- "Asistencia Programada" (nombre visible; en código sigue como "kiosko" con permiso explícito del usuario): página pública `/lab/:token` (token = número simple de lab, ej. `/lab/3`) donde el docente marca asistencia sin PIN. Flujo: elegir materia del lab → calendario mensual de esa materia → marcar (Clase/Parcial/Reposición), excluye días de vacaciones (1–9 agosto). Gestionado desde la pestaña "Asistencia Programada" en Gestión de asistencia.
+- API HTTP externa `registrarAsistenciaExterna` (Cloud Function `onRequest`, protegida con header `X-Api-Key` contra `ASISTENCIA_API_KEY` en `functions/.env`) para que otro software registre asistencia.
+- "Forzar movimiento" en el panel Mover de `ClaseFormulario.jsx`: resuelve un ciclo de intercambio de 2 clases marcando la desplazada como `pendienteRevision: true` en vez de bloquear.
+- Chips de módulo (M1–M4 / "S/M") en la columna Laboratorio de Carga académica para Lab 03/08.
+- **Estadísticas** (`/admin/estadisticas`, nuevo hoy): alumnos llegados por lab, horas/semana por lab, horas por materia (reales vs. esperadas a la fecha), tarjetas resumen y gráficos de barra CSS puro (`GraficoBarras.jsx`, sin librería nueva). Cálculos centralizados en `src/utils/estadisticasHelpers.js`, reusados también por Reportes → Uso de laboratorios / Horas por materia.
+- **Tours en la matriz** (nuevo hoy): botón "Agregar tour" en Matriz (`MatrizLab.jsx`), mecanismo instantáneo sin aprobación —igual que Reuniones/Defensas, vía `EventoEspecialForm.jsx` con `tipo: 'tour'` en `clasesRegulares`—, solo para encargado/jefa. Requiere institución (campo `titulo`), hora inicio/fin y laboratorio. Visible/filtrable en Carga académica. **No** usa ni modifica el sistema preexistente de "Tour UTEC" en `reservas` (`TIPOS_RESERVA.TOUR`, con aprobación de jefa vía `/reservar` — ese sigue intacto y es un mecanismo aparte).
+- Fix de paso: `validadorConflictos.js` solo trataba `PUNTUAL` como evento de fecha exacta; Reuniones/Defensas/Tours ahora sí bloquean correctamente una reserva de docente en conflicto (antes no bloqueaban, bug preexistente).
+
+Desplegado hoy: merge a `main` + push (Vercel) + `npm run build:onpremise` (dist-onpremise regenerado). No hubo cambios de `firestore.rules` ni Cloud Functions en esta tanda — `clasesRegulares` ya permitía `create/update/delete` a `esAdmin()`, cubre Tours sin cambios de reglas.
 
 ## Cambios más recientes
 
