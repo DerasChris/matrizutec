@@ -1,12 +1,13 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Users, Clock, Bookmark, BookOpen, GraduationCap, Hash, Award, Moon } from 'lucide-react';
+import { Users, Clock, Bookmark, BookOpen, GraduationCap, Hash, Award, Moon, Bus } from 'lucide-react';
 import { colorPorCodigo, TIPOS_CLASE, TIPOS_CLASE_LABEL } from '../../lib/constants';
 import { formatearHora } from '../../utils/dateHelpers';
 import { esDispositivoTactil } from '../../utils/matrizHelpers';
 
 const COLOR_REUNION = '#7c3aed';
 const COLOR_DEFENSA = '#0d9488';
+const COLOR_TOUR = '#d97706';
 
 // A partir de esta hora una clase se considera de salida tardía (después del
 // cierre "normal" de 20:00, aunque el horario operativo llega hasta 20:30).
@@ -123,6 +124,26 @@ function TooltipCard({ clase, esReserva, pos }) {
                 )}
               </div>
             </>
+          ) : clase.tipo === TIPOS_CLASE.TOUR ? (
+            <>
+              <div className="flex items-center gap-1.5">
+                <Bus size={11} className="text-amber-300 shrink-0" />
+                <span className="text-[10px] font-semibold text-amber-300 uppercase tracking-wide">Tour</span>
+              </div>
+              <p className="font-semibold text-sm leading-snug mt-1">{clase.titulo || 'Tour institucional'}</p>
+              <div className="flex items-center gap-1.5 text-gray-300 text-[11px] mt-1">
+                <Clock size={11} className="shrink-0" />
+                {formatearHora(clase.horaInicio)} – {formatearHora(clase.horaFin)}
+                {esSalidaTardia(clase.horaFin) && (
+                  <span className="flex items-center gap-0.5 text-amber-400"><Moon size={10} /> salida tardía</span>
+                )}
+              </div>
+              {clase.observaciones && (
+                <p className="text-gray-400 text-[10px] italic border-t border-gray-700 pt-2 mt-2">
+                  {clase.observaciones}
+                </p>
+              )}
+            </>
           ) : (
             <>
               <div>
@@ -186,27 +207,30 @@ export default function BloqueClase({ clase, onClick, compacto = false, esReserv
 
   const esReunion = clase.tipo === TIPOS_CLASE.REUNION;
   const esDefensa = clase.tipo === TIPOS_CLASE.DEFENSA;
+  const esTour = clase.tipo === TIPOS_CLASE.TOUR;
 
   const codigo = clase.codigoAsignatura || clase.asignatura || clase.motivo || 'X';
   const color = esReunion
     ? COLOR_REUNION
     : esDefensa
     ? COLOR_DEFENSA
+    : esTour
+    ? COLOR_TOUR
     : (clase.color || colorPorCodigo(codigo));
 
   const titulo = esReserva
     ? (clase.asignatura || clase.motivo || 'Reserva')
-    : esReunion || esDefensa
+    : esReunion || esDefensa || esTour
     ? (clase.titulo || TIPOS_CLASE_LABEL?.[clase.tipo] || clase.tipo)
     : (clase.nombreAsignatura || clase.codigoAsignatura || '');
 
-  const subtitulo = !esReserva && !esReunion && !esDefensa
+  const subtitulo = !esReserva && !esReunion && !esDefensa && !esTour
     ? `${clase.codigoAsignatura || ''}${clase.seccion ? `-${clase.seccion}` : ''}`
     : esDefensa && clase.docente
     ? clase.docente.split(' ')[0]
     : null;
 
-  const Icono = esReserva ? Bookmark : esReunion ? Users : esDefensa ? Award : BookOpen;
+  const Icono = esReserva ? Bookmark : esReunion ? Users : esDefensa ? Award : esTour ? Bus : BookOpen;
 
   function onEnter() {
     if (!btnRef.current) return;

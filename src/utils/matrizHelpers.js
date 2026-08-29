@@ -131,7 +131,9 @@ export function generarDiasDelMes(anio, mes) {
   return dias;
 }
 
-const TIPOS_FECHA_EXACTA = new Set([TIPOS_CLASE.PUNTUAL, TIPOS_CLASE.REUNION, TIPOS_CLASE.DEFENSA]);
+export const TIPOS_FECHA_EXACTA = new Set([
+  TIPOS_CLASE.PUNTUAL, TIPOS_CLASE.REUNION, TIPOS_CLASE.DEFENSA, TIPOS_CLASE.TOUR,
+]);
 
 export function clasesQueAplicanEnFecha(clases, fechaISO, diaSemanaId, moduloId = null) {
   return clases.filter(c => {

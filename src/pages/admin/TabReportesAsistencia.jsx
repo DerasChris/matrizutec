@@ -3,8 +3,8 @@ import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import { Download, AlertTriangle, Plus, X, Loader2 } from 'lucide-react';
 import { registrarAsistenciaManual } from '../../services/asistenciaService';
-import { duracionHoras, fechaActualISO } from '../../utils/dateHelpers';
-import { contarOcurrenciasClaseEnRango } from '../../utils/matrizHelpers';
+import { duracionHoras } from '../../utils/dateHelpers';
+import { calcularUsoPorLaboratorio, calcularHorasPorMateria } from '../../utils/estadisticasHelpers';
 import { TIPOS_CLASE } from '../../lib/constants';
 
 const DIA_CORTO = {
@@ -77,22 +77,10 @@ export default function TabReportesAsistencia({
 // ─────────────────────────────────────────────────────────────────
 
 function SeccionUsoLaboratorios({ asistenciasValidas, labs }) {
-  const stats = useMemo(() => {
-    const porLab = {};
-    for (const lab of labs) {
-      porLab[lab.id] = { lab, registros: 0, horas: 0, clases: new Set(), docentes: new Set(), ultimaFecha: null };
-    }
-    for (const a of asistenciasValidas) {
-      const s = porLab[a.labId];
-      if (!s) continue; // lab fuera de alcance (inactivo o no asignado)
-      s.registros++;
-      s.horas += duracionHoras(a.horaInicio, a.horaFin);
-      if (a.claseId) s.clases.add(a.claseId);
-      if (a.docente) s.docentes.add(a.docente);
-      if (!s.ultimaFecha || a.fecha > s.ultimaFecha) s.ultimaFecha = a.fecha;
-    }
-    return Object.values(porLab).sort((a, b) => (a.lab.numero || 0) - (b.lab.numero || 0));
-  }, [asistenciasValidas, labs]);
+  const stats = useMemo(
+    () => calcularUsoPorLaboratorio(asistenciasValidas, labs),
+    [asistenciasValidas, labs]
+  );
 
   const sinRegistro = stats.filter(s => s.registros === 0);
 
@@ -143,55 +131,10 @@ function SeccionUsoLaboratorios({ asistenciasValidas, labs }) {
 // ─────────────────────────────────────────────────────────────────
 
 function SeccionHorasPorMateria({ asistenciasValidas, clases, ciclo }) {
-  const hoy = fechaActualISO();
-  const cicloInicio = ciclo?.fechaInicio || hoy;
-  const cicloFin = ciclo?.fechaFin || hoy;
-
-  const materias = useMemo(() => {
-    const porMateria = {};
-    const regulares = clases.filter(c => c.tipo === TIPOS_CLASE.REGULAR && c.activo !== false);
-
-    for (const c of regulares) {
-      const key = c.codigoAsignatura || c.nombreAsignatura;
-      if (!key) continue;
-      if (!porMateria[key]) {
-        porMateria[key] = {
-          codigo: c.codigoAsignatura,
-          nombre: c.nombreAsignatura,
-          secciones: new Set(),
-          horasSemana: 0,
-          proyectadas: 0,
-          esperadasAlaFecha: 0,
-          reales: 0,
-        };
-      }
-      const m = porMateria[key];
-      m.secciones.add(c.seccion);
-      const horasClase = duracionHoras(c.horaInicio, c.horaFin);
-      m.horasSemana += horasClase * (c.diasSemana?.length || 0);
-
-      const desde = c.fechaInicio || cicloInicio;
-      const finVigencia = c.fechaFin || cicloFin;
-      m.proyectadas += contarOcurrenciasClaseEnRango(c, desde, finVigencia) * horasClase;
-
-      const hastaHoy = hoy < finVigencia ? hoy : finVigencia;
-      m.esperadasAlaFecha += contarOcurrenciasClaseEnRango(c, desde, hastaHoy) * horasClase;
-    }
-
-    for (const a of asistenciasValidas) {
-      const key = a.codigoAsignatura || a.nombreAsignatura;
-      const m = porMateria[key];
-      if (!m) continue; // asistencia de una clase que ya no está activa en este alcance
-      m.reales += duracionHoras(a.horaInicio, a.horaFin);
-    }
-
-    return Object.values(porMateria)
-      .map(m => ({
-        ...m,
-        cumplimiento: m.esperadasAlaFecha > 0 ? Math.round((m.reales / m.esperadasAlaFecha) * 100) : null,
-      }))
-      .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-  }, [asistenciasValidas, clases, cicloInicio, cicloFin, hoy]);
+  const materias = useMemo(
+    () => calcularHorasPorMateria(clases, asistenciasValidas, ciclo),
+    [asistenciasValidas, clases, ciclo]
+  );
 
   return (
     <div className="space-y-3">

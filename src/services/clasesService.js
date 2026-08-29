@@ -15,6 +15,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { COLECCIONES, TIPOS_CLASE } from '../lib/constants';
+import { TIPOS_FECHA_EXACTA } from '../utils/matrizHelpers';
 
 export async function crearClase(datos) {
   const ref = collection(db, COLECCIONES.CLASES_REGULARES);
@@ -471,9 +472,8 @@ export async function restaurarSnapshot(snapshotId, cicloId, cicloNombre, usuari
 export async function obtenerClasesDelLabPorMes(labId, cicloId, anio, mes) {
   const todas = await obtenerClasesDelLab(labId, cicloId, true);
 
-  const TIPOS_POR_FECHA = new Set([TIPOS_CLASE.PUNTUAL, TIPOS_CLASE.REUNION, TIPOS_CLASE.DEFENSA]);
   return todas.filter(c => {
-    if (TIPOS_POR_FECHA.has(c.tipo)) {
+    if (TIPOS_FECHA_EXACTA.has(c.tipo)) {
       if (!c.fechaInicio) return false;
       const [y, m] = c.fechaInicio.split('-').map(Number);
       return y === anio && m === mes;

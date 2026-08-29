@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Users, Award, Save, Trash2, X, Copy, CheckCircle, AlertTriangle, Loader,
+  Users, Award, Bus, Save, Trash2, X, Copy, CheckCircle, AlertTriangle, Loader,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { FRANJAS_HORARIAS, TIPOS_CLASE } from '../../lib/constants';
@@ -24,12 +24,13 @@ export default function EventoEspecialForm({
   cicloId,
   eventoEditando,
   labs = [],
+  tipoInicial = TIPOS_CLASE.REUNION,
   onGuardado,
   onCerrar,
 }) {
   const { perfil } = useAuth();
 
-  const [tipo,          setTipo]          = useState(eventoEditando?.tipo || TIPOS_CLASE.REUNION);
+  const [tipo,          setTipo]          = useState(eventoEditando?.tipo || tipoInicial);
   const [titulo,        setTitulo]        = useState(eventoEditando?.titulo || '');
   const [fecha,         setFecha]         = useState(eventoEditando?.fechaInicio || fechaActualISO());
   const [horaInicio,    setHoraInicio]    = useState(eventoEditando?.horaInicio || '08:00');
@@ -176,10 +177,11 @@ export default function EventoEspecialForm({
         {/* Tipo selector */}
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">Tipo de evento</label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {[
               { id: TIPOS_CLASE.REUNION, label: 'Reunión', icon: Users,  desc: 'Sin docente ni código' },
               { id: TIPOS_CLASE.DEFENSA, label: 'Defensa', icon: Award,  desc: 'Proyecto o tesis' },
+              { id: TIPOS_CLASE.TOUR,    label: 'Tour',    icon: Bus,    desc: 'Visita institucional' },
             ].map(({ id, label, icon: Icon, desc }) => (
               <button
                 key={id}
@@ -189,7 +191,9 @@ export default function EventoEspecialForm({
                   tipo === id
                     ? id === TIPOS_CLASE.REUNION
                       ? 'border-violet-500 bg-violet-50 text-violet-800'
-                      : 'border-teal-500 bg-teal-50 text-teal-800'
+                      : id === TIPOS_CLASE.DEFENSA
+                        ? 'border-teal-500 bg-teal-50 text-teal-800'
+                        : 'border-amber-500 bg-amber-50 text-amber-800'
                     : 'border-gray-200 text-gray-600 hover:border-gray-300'
                 }`}
               >
@@ -205,12 +209,20 @@ export default function EventoEspecialForm({
 
         {/* Título */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Título *</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            {tipo === TIPOS_CLASE.TOUR ? 'Institución visitante *' : 'Título *'}
+          </label>
           <input
             type="text"
             value={titulo}
             onChange={e => { setTitulo(e.target.value); setErrores(v => ({...v, titulo: null})); }}
-            placeholder={tipo === TIPOS_CLASE.REUNION ? 'Ej. Reunión de docentes de FICA' : 'Ej. Defensa de tesis — Ing. Sistemas'}
+            placeholder={
+              tipo === TIPOS_CLASE.TOUR
+                ? 'Ej. Colegio San Francisco'
+                : tipo === TIPOS_CLASE.REUNION
+                  ? 'Ej. Reunión de docentes de FICA'
+                  : 'Ej. Defensa de tesis — Ing. Sistemas'
+            }
             className={inputCls(errores.titulo)}
           />
           {errores.titulo && <p className="text-xs text-red-500 mt-0.5">{errores.titulo}</p>}

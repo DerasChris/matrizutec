@@ -21,6 +21,7 @@ import { ROLES } from './lib/constants';
 import Servicios from './pages/Servicios';
 import RegistroActividad from './pages/admin/RegistroActividad';
 import GestionAsistencia from './pages/admin/GestionAsistencia';
+import Estadisticas from './pages/admin/Estadisticas';
 import GestionAvisos from './pages/admin/GestionAvisos';
 import AgendaHoy from './pages/AgendaHoy';
 import KioskoAsistencia from './pages/KioskoAsistencia';
@@ -103,6 +104,12 @@ export default function App() {
             <Route path="/admin/asistencia" element={
               <ProtectedRoute rolesPermitidos={[ROLES.ENCARGADO, ROLES.JEFA]}>
                 <GestionAsistencia />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/admin/estadisticas" element={
+              <ProtectedRoute rolesPermitidos={[ROLES.ENCARGADO, ROLES.JEFA]}>
+                <Estadisticas />
               </ProtectedRoute>
             } />
 

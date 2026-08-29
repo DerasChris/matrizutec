@@ -85,6 +85,13 @@ function SortIcon({ col, ordenCol, ordenDir }) {
     : <ChevronDown size={11} className="text-utec-primary ml-1 shrink-0" />;
 }
 
+const TIPO_BADGE_LABEL = {
+  [TIPOS_CLASE.TOUR]:    'Tour',
+  [TIPOS_CLASE.REUNION]: 'Reunión',
+  [TIPOS_CLASE.DEFENSA]: 'Defensa',
+  [TIPOS_CLASE.PUNTUAL]: 'Puntual',
+};
+
 const COLS = [
   { key: 'labId',            label: 'Laboratorio' },
   { key: 'codigoAsignatura', label: 'Código'      },
@@ -111,6 +118,7 @@ export default function GestionCarga() {
   const [filtroDias,    setFiltroDias]    = useState([]); // array de ids de día, OR entre sí
   const [filtroTurno,   setFiltroTurno]   = useState(''); // '' | 'manana' | 'tarde'
   const [filtroEstado,  setFiltroEstado]  = useState('activas');
+  const [filtroTipo,    setFiltroTipo]    = useState(''); // '' | regular | tour | reunion | defensa | puntual
   const [soloConflicto, setSoloConflicto] = useState(false);
   const [soloPendientes, setSoloPendientes] = useState(false);
   const [formAbierto,   setFormAbierto]   = useState(false);
@@ -176,6 +184,7 @@ export default function GestionCarga() {
     if (filtroDias.length > 0) r = r.filter(c => (c.diasSemana || []).some(d => filtroDias.includes(d)));
     if (filtroTurno === 'manana') r = r.filter(c => horaAMin(c.horaInicio) < CORTE_TURNO_MIN);
     if (filtroTurno === 'tarde')  r = r.filter(c => horaAMin(c.horaInicio) >= CORTE_TURNO_MIN);
+    if (filtroTipo) r = r.filter(c => c.tipo === filtroTipo);
     if (soloConflicto) r = r.filter(c => conflictIds.has(c.id));
     if (soloPendientes) r = r.filter(c => c.pendienteRevision && c.activo !== false);
     if (busqueda.trim()) {
@@ -202,7 +211,7 @@ export default function GestionCarga() {
       return ordenDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
     });
     return r;
-  }, [clases, filtroEstado, filtroLabs, filtroDias, filtroTurno, busqueda, soloConflicto, soloPendientes, ordenCol, ordenDir, labMap, conflictIds]);
+  }, [clases, filtroEstado, filtroLabs, filtroDias, filtroTurno, filtroTipo, busqueda, soloConflicto, soloPendientes, ordenCol, ordenDir, labMap, conflictIds]);
 
   const conflictGroups = useMemo(() => {
     const byLab = {};
@@ -511,6 +520,18 @@ export default function GestionCarga() {
               <option value="inactivas">Inactivas</option>
               <option value="todas">Todas</option>
             </select>
+            <select
+              value={filtroTipo}
+              onChange={e => setFiltroTipo(e.target.value)}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-utec-primary"
+            >
+              <option value="">Todos los tipos</option>
+              <option value={TIPOS_CLASE.REGULAR}>Regular</option>
+              <option value={TIPOS_CLASE.TOUR}>Tour</option>
+              <option value={TIPOS_CLASE.REUNION}>Reunión</option>
+              <option value={TIPOS_CLASE.DEFENSA}>Defensa</option>
+              <option value={TIPOS_CLASE.PUNTUAL}>Puntual</option>
+            </select>
             {conflictos.length > 0 && (
               <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
                 <input
@@ -610,6 +631,21 @@ export default function GestionCarga() {
                                 S/M
                               </span>
                             )
+                          )}
+                          {clase.tipo && clase.tipo !== TIPOS_CLASE.REGULAR && (
+                            <span
+                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                                clase.tipo === TIPOS_CLASE.TOUR
+                                  ? 'text-amber-800 bg-amber-100'
+                                  : clase.tipo === TIPOS_CLASE.REUNION
+                                    ? 'text-violet-800 bg-violet-100'
+                                    : clase.tipo === TIPOS_CLASE.DEFENSA
+                                      ? 'text-teal-800 bg-teal-100'
+                                      : 'text-gray-700 bg-gray-100'
+                              }`}
+                            >
+                              {TIPO_BADGE_LABEL[clase.tipo] || clase.tipo}
+                            </span>
                           )}
                         </div>
                       </td>
